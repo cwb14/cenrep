@@ -1,0 +1,18 @@
+# cenrep runs in the existing mamba env `synLTR`; this file only records what it needs.
+name: cenrep
+channels: [conda-forge, bioconda]
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - pysam
+  - pyhmmer>=0.12
+  - matplotlib
+  - pytest
+  - trf=4.10.0rc2
+  - blast>=2.16
+  - mafft=7.525
+  - cd-hit=4.8.1
+  - infernal
+  - minimap2
+  - samtools
