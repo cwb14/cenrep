@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from cenrep.families import (RRNA_CM, absorb_multimers, cluster_seeds, dedup_families, frame_rotation, msa_consensus,
-                             chain_groups, pad_hit, rdna_tags, seed_match, trim_overhang)
+from cenrep.families import (RRNA_CM, absorb_multimers, base_unit, cluster_seeds, dedup_families, frame_rotation,
+                             msa_consensus, chain_groups, pad_hit, rdna_tags, seed_match, trim_overhang)
 from conftest import have
 from synth import mutate, rseq
 
@@ -196,3 +196,50 @@ def test_rdna_neighbourhood_flags_45s_spacer_repeats(tmp_path):
     res = rdna_neighbourhood(fa, {"c1": len("".join(seq))}, arrays, ["igs", "sat"], tmp_path / "w", 2,
                              flank=15_000, n_arrays=5)
     assert res["igs"] == (5, 5) and res["sat"] == (5, 0)
+
+
+def _seeds(rows):
+    import pandas as pd
+    return pd.DataFrame(rows, columns=["seed_id", "genome", "chrom", "start", "end", "period", "consensus"])
+
+
+def test_base_unit_skips_consensus_shorter_than_its_period():
+    """TRF can drop alignment columns at indels: A. arenosa pAa seed with period 179 but a 170-bp consensus. As the
+    'shortest member' it founded a family whose 170-bp model missed 9 bp of every 179-bp monomer."""
+    rng = np.random.default_rng(3)
+    unit = rseq(rng, 179)
+    mem = _seeds([("s1", "G", "c1", 0, 50_000, 179, unit[:170]),           # largest span, truncated consensus
+                  ("s2", "G", "c1", 60_000, 90_000, 179, unit),            # full period
+                  ("s3", "G", "c2", 0, 40_000, 537, unit * 3),             # trimer
+                  ("s4", "G", "c2", 50_000, 60_000, 168, unit[:168])])     # small deletion-variant array
+    base, seq = base_unit(mem, {})
+    assert base.seed_id == "s2" and seq == unit
+
+
+def test_base_unit_takes_a_genome_period_when_no_consensus_spans_it(tmp_path):
+    import pysam
+    rng = np.random.default_rng(4)
+    unit = rseq(rng, 179)
+    chrom = rseq(rng, 1000) + unit * 20 + rseq(rng, 1000)
+    fa = tmp_path / "G.fa"
+    fa.write_text(f">c1\n{chrom}\n")
+    pysam.faidx(str(fa))
+    mem = _seeds([("s1", "G", "c1", 1000, 1000 + 179 * 20, 179, unit[:170])])
+    base, seq = base_unit(mem, {"G": fa})
+    assert base.seed_id == "s1" and seq == unit                       # one period of the array, from the genome
+
+
+def test_base_unit_keeps_the_monomer_when_only_multimers_span_their_period(tmp_path):
+    """A. arenosa fam014: the only monomer-period seed had a truncated consensus; its full-period cluster mates were
+    1220-bp multimers. The model must still be founded on one monomer period, taken from the genome."""
+    import pysam
+    rng = np.random.default_rng(5)
+    unit = rseq(rng, 179)
+    chrom = rseq(rng, 1000) + unit * 30 + rseq(rng, 1000)
+    fa = tmp_path / "G.fa"
+    fa.write_text(f">c1\n{chrom}\n")
+    pysam.faidx(str(fa))
+    mem = _seeds([("s1", "G", "c1", 1000, 1000 + 179 * 30, 1253, unit * 7),            # full-period 7-mer
+                  ("s2", "G", "c1", 1000 + 179 * 5, 1000 + 179 * 25, 179, unit[:170])])  # truncated monomer
+    base, seq = base_unit(mem, {"G": fa})
+    assert base.seed_id == "s2" and seq == unit

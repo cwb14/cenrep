@@ -35,6 +35,26 @@ def select_seeds(trf: dict, p) -> pd.DataFrame:
     return s
 
 
+FULL_PERIOD_TOL = 0.01   # consensus within 1% (>= 1 bp) of the TRF period counts as one whole repeat unit
+
+
+def base_unit(mem: pd.DataFrame, fastas: dict):
+    """The sequence a family model is founded on: one whole monomer. Multimers have periods near k x the monomer
+    (k >= 2), so the monomer class is every seed with a period below 1.5 x the shortest; within it the largest-span
+    seed whose consensus spans its whole period is used. TRF drops alignment columns at indels, so a consensus can
+    be shorter than its period (A. arenosa pAa: period 179, consensus 170) and a model founded on it misses part of
+    every monomer; if no monomer-class seed has a whole consensus, one period of the largest array is taken from
+    the genome. mem is sorted by span, largest first. Returns (seed row, sequence)."""
+    mono = mem[mem.period < 1.5 * mem.period.min()]
+    full = mono[(mono.consensus.str.len() - mono.period).abs() <= np.maximum(1, FULL_PERIOD_TOL * mono.period)]
+    if len(full):
+        b = full.iloc[0]
+        return b, b.consensus.upper()
+    b = mono.iloc[0]
+    with pysam.FastaFile(str(fastas[b.genome])) as fa:
+        return b, fa.fetch(b.chrom, int(b.start), int(b.start + b.period)).upper()
+
+
 def seed_match(slen: int, llen: int, hsps, t_same: float, t_multi: float) -> bool:
     """Shorter seed (length slen, BLAST query) vs the longer seed's dimer (2*llen, subject).
     hsps: [(pident, qstart, qend, sstart, send), ...], BLAST 1-based coordinates."""
@@ -426,9 +446,8 @@ def build_families(trf: dict, genomes: list, workdir: Path, threads: int, p) -> 
         assign = cluster_seeds(seqs, list(seeds.seed_id), workdir / "blast", threads, p.fam_ident, p.multi_ident)
         seeds["rep"] = seeds.seed_id.map(assign)
         seeds["fam_id"] = "."
-        lens = seeds.consensus.str.len()
-        bases = {r: d.consensus.iloc[0] for r, d in seeds[lens <= 1.05 * lens.groupby(seeds.rep).transform("min")]
-                 .groupby("rep", sort=False)}                   # each cluster's largest-span shortest member
+        fastas = {g.name: g.fasta for g in genomes}
+        bases = {r: base_unit(d, fastas)[1] for r, d in seeds.groupby("rep", sort=False)}
         absorbed = absorb_multimers(bases, workdir / "blast_absorb", threads, p.absorb_ident)
         if absorbed:
             seeds["rep"] = seeds.rep.map(lambda r: absorbed.get(r, r))
@@ -442,15 +461,13 @@ def build_families(trf: dict, genomes: list, workdir: Path, threads: int, p) -> 
         log.info(f"families: {len(seeds)} seeds -> {len(set(assign.values()))} clusters; "
                  f"{len(top)} carried forward" + (f"; {len(dropped)} more >= min_fam_span dropped by max_families "
                                                   f"(largest {dropped[0][0]} bp)" if dropped else ""))
-        fastas = {g.name: g.fasta for g in genomes}
         rng = random.Random(1)
         refs = {}                                        # frame references: final consensus of earlier families
         for i, (mx, rep) in enumerate(top, 1):
             fid = f"fam{i:03d}"
             mem = seeds[seeds.rep == rep]
-            lens = mem.consensus.str.len()
-            base = mem[lens <= 1.05 * lens.min()].iloc[0]      # largest-span shortest member = base monomer
-            hmm, cons, mode, n = build_hmm(fid, base.consensus, seed_intervals(mem, p), fastas,
+            base, unit = base_unit(mem, fastas)
+            hmm, cons, mode, n = build_hmm(fid, unit, seed_intervals(mem, p), fastas,
                                            workdir / fid, threads, p, rng, refs)
             refs[fid] = cons
             seeds.loc[mem.index, "fam_id"] = fid

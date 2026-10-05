@@ -26,7 +26,8 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.1 = plot: gene density line grey, under the satellite bars.
 # 0.4.2 = classify: 45S rDNA spacer repeats (arrays flanked by 18S/5.8S/25S genes) are never centromeric.
 # 0.4.3 = inputs: bgzip *.fa.gz genomes (results unchanged: no stage version bump).
-STAGE_VERSION = {"trf": "0.3.0", "families": "0.3.6", "annotate": "0.4.0", "classify": "0.4.2",
+# 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
+STAGE_VERSION = {"trf": "0.3.0", "families": "0.4.4", "annotate": "0.4.0", "classify": "0.4.2",
                  "centromeres": "0.4.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {

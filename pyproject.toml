@@ -1,6 +1,6 @@
 [project]
 name = "cenrep"
-version = "0.4.3"
+version = "0.4.4"
 description = "Centromeric satellite, HOR and tandem-repeat annotation for allopolyploid complexes"
 requires-python = ">=3.10"
 dependencies = ["numpy", "pandas", "pysam", "pyhmmer>=0.12", "matplotlib"]
