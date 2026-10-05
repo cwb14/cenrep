@@ -1,2 +1,2 @@
 """cenrep: centromeric satellite, HOR and tandem-repeat annotation."""
-__version__ = "0.4.4"
+__version__ = "0.5.0"

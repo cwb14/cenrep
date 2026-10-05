@@ -8,6 +8,7 @@ import pyhmmer
 import pysam
 from pyhmmer.easel import Alphabet, DigitalSequenceBlock, TextSequence
 
+from .params import ANNOT_CHUNK, MULTIMER_MIN_COV, MULTIMER_RATIO, OVERLAP_MAX_COV
 from .util import log, union_bp
 
 ABC = Alphabet.dna()
@@ -53,7 +54,7 @@ def _chunks(chroms: dict, size: int, overlap: int):
             s = e - overlap
 
 
-def search_genome(hmms, genome, threads: int, evalue: float, chunk: int = 2_000_000, overlap: int = 10_000,
+def search_genome(hmms, genome, threads: int, evalue: float, chunk: int = ANNOT_CHUNK, overlap: int = 10_000,
                   ref_len: int = 0) -> dict:
     """{chrom: overlap-resolved monomer hits}. pyhmmer's nhmmer parallelises over query models only, so a few
     long models would leave most threads idle; instead every (chunk x all models) job runs on a thread pool
@@ -93,7 +94,7 @@ def search_genome(hmms, genome, threads: int, evalue: float, chunk: int = 2_000_
     return {c: resolve_overlaps(drop_multimer_hits(pd.DataFrame(r, columns=MON_COLS))) for c, r in out.items()}
 
 
-def drop_multimer_hits(df: pd.DataFrame, ratio: float = 1.9, min_cov: float = 0.5) -> pd.DataFrame:
+def drop_multimer_hits(df: pd.DataFrame, ratio: float = MULTIMER_RATIO, min_cov: float = MULTIMER_MIN_COV) -> pd.DataFrame:
     """Describe satellites by their shortest repeat unit: drop a hit when hits of families whose model is
     >= ratio x shorter cover >= min_cov of it. Composite or non-integer multimer families (CentBd x7 + spacer,
     CentO x2.3) otherwise outscore the monomer hits on the monomer arrays, because bitscore grows with length."""
@@ -112,7 +113,7 @@ def drop_multimer_hits(df: pd.DataFrame, ratio: float = 1.9, min_cov: float = 0.
     return df[keep].reset_index(drop=True)
 
 
-def resolve_overlaps(df: pd.DataFrame, max_cov: float = 0.2) -> pd.DataFrame:
+def resolve_overlaps(df: pd.DataFrame, max_cov: float = OVERLAP_MAX_COV) -> pd.DataFrame:
     """Greedy by bitscore: accept a hit only if <= max_cov of it is already covered by accepted hits
     (coverage bitmap over the chromosome span). A pairwise ">50% of the shorter" rule let hits of phase-shifted
     subfamilies that overlap each of two accepted neighbours by <= 50% survive (A. thaliana CEN180: +27% monomers)."""

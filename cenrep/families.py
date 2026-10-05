@@ -8,11 +8,13 @@ import pyhmmer
 import pysam
 from pyhmmer.easel import Alphabet, DigitalSequenceBlock, TextMSA, TextSequence
 
-from .util import canonical_rotation, log, merge_intervals, parse_fasta_text, revcomp, run, union_bp, write_fasta
+from .params import (BLAST_BATCH, FAMILY_IDENT, FULL_MONOMER_COV, FULL_PERIOD_TOL, LEN_TOL, MSA_MAX_GAP,
+                     OVERHANG_MIN_BP, RDNA_FLANK_EVALUE, RDNA_TAG_EVALUE, RELATED_LEN_TOL)
+from .util import (CenrepError, canonical_rotation, log, merge_intervals, parse_fasta_text, revcomp, run, union_bp,
+                   write_fasta)
 
 ABC = Alphabet.dna()
-BATCH = 200
-RRNA_CM = Path(__file__).resolve().parent.parent / "data" / "rfam_rrna.cm"   # Rfam 5S/5.8S/SSU/LSU (data/README.md)
+RRNA_CM = Path(__file__).resolve().parent / "data" / "rfam_rrna.cm"   # Rfam 5S/5.8S/SSU/LSU (package data, data/README.md)
 BLAST_FMT = "6 qseqid sseqid pident length qstart qend sstart send qlen slen bitscore"
 FAM_COLS = ["fam_id", "rep_seed", "base_seed", "consensus_len", "n_seeds", "max_genome_span",
             "genome_spans", "hmm_mode", "n_hmm_seqs", "superfamily", "rdna", "chain_group"]
@@ -33,9 +35,6 @@ def select_seeds(trf: dict, p) -> pd.DataFrame:
                       ascending=[False, True, True, True]).reset_index(drop=True)
     s["seed_id"] = [f"s{i}" for i in range(len(s))]
     return s
-
-
-FULL_PERIOD_TOL = 0.01   # consensus within 1% (>= 1 bp) of the TRF period counts as one whole repeat unit
 
 
 def base_unit(mem: pd.DataFrame, fastas: dict):
@@ -60,7 +59,7 @@ def seed_match(slen: int, llen: int, hsps, t_same: float, t_multi: float) -> boo
     hsps: [(pident, qstart, qend, sstart, send), ...], BLAST 1-based coordinates."""
     ratio = llen / slen
     k = max(1, round(ratio))
-    if abs(ratio - k) > 0.05 * k:
+    if abs(ratio - k) > LEN_TOL * k:
         return False
     t = 100 * (t_same if k == 1 else t_multi)
     good = [h for h in hsps if h[0] >= t]
@@ -105,11 +104,11 @@ def _related(a, b, seqs, pairs, t_same, t_multi) -> bool:
 
 def cluster_seeds(seqs: dict, order: list, workdir: Path, threads: int, t_same: float, t_multi: float) -> dict:
     """Greedy centroid clustering in priority order (no chaining). Returns {id: representative id}.
-    Works in batches of BATCH candidate representatives so BLAST output stays bounded."""
+    Works in batches of BLAST_BATCH candidate representatives so BLAST output stays bounded."""
     assign, rest, rnd = {}, list(order), 0
     while rest:
         rnd += 1
-        cand, others = rest[:BATCH], rest[BATCH:]
+        cand, others = rest[:BLAST_BATCH], rest[BLAST_BATCH:]
         sub = {i: seqs[i] for i in cand}
         pairs = blast_pairs(sub, sub, workdir / f"r{rnd}c", threads)
         reps = []
@@ -149,7 +148,7 @@ def absorb_multimers(cons: dict, workdir: Path, threads: int, ident: float) -> d
                 continue
             ratio = len(sf) / len(sg)
             k = round(ratio)
-            if k < 2 or abs(ratio - k) > 0.05 * k:
+            if k < 2 or abs(ratio - k) > LEN_TOL * k:
                 continue
             hsps = pairs.get((g, f), [])
             if seed_match(len(sg), len(sf), hsps, ident, ident):
@@ -167,7 +166,7 @@ def absorb_multimers(cons: dict, workdir: Path, threads: int, ident: float) -> d
     return root
 
 
-def rdna_tags(cons: dict, workdir: Path, threads: int, cm=RRNA_CM, evalue: float = 1e-5) -> dict:
+def rdna_tags(cons: dict, workdir: Path, threads: int, cm=RRNA_CM, evalue: float = RDNA_TAG_EVALUE) -> dict:
     """Tag families whose consensus (searched as a dimer, so a gene spanning the rotation point is found)
     contains an rRNA gene (Rfam 5S/5.8S/SSU/LSU, cmsearch). rDNA arrays (e.g. pericentromeric 5S rDNA)
     look like satellites but are never centromeric (review C2). Returns {fam: rRNA model name or '.'}."""
@@ -175,8 +174,7 @@ def rdna_tags(cons: dict, workdir: Path, threads: int, cm=RRNA_CM, evalue: float
     if not cons:
         return tags
     if not Path(cm).exists():
-        log.warning(f"families: rRNA models missing ({cm}); rDNA tagging skipped")
-        return tags
+        raise CenrepError(f"rRNA models missing: {cm} (part of the cenrep package; reinstall it)")
     workdir.mkdir(parents=True, exist_ok=True)
     q, tbl = workdir / "cons_dimers.fa", workdir / "rrna.tbl"
     write_fasta(q, ((f, s + s) for f, s in cons.items()))
@@ -199,17 +197,17 @@ RRNA_45S = ("SSU_rRNA_eukarya", "5_8S_rRNA", "LSU_rRNA_eukarya")
 
 
 def rdna_neighbourhood(fasta, chroms: dict, arrays: pd.DataFrame, fams: list, workdir: Path, threads: int,
-                       flank: int = 15_000, n_arrays: int = 10, cm=RRNA_CM, evalue: float = 1e-10) -> dict:
+                       flank: int = 15_000, n_arrays: int = 10, cm=RRNA_CM, evalue: float = RDNA_FLANK_EVALUE) -> dict:
     """45S rDNA intergenic-spacer subrepeats form satellite-like arrays whose consensus holds no rRNA gene, so
     rdna_tags misses them (P. infirma chr1A NOR: Poa_sat18_125 was called centromeric). Search the flanks
     (+/- flank) of each family's n_arrays largest arrays for 45S rRNA genes (Rfam SSU/5.8S/LSU; cmsearch
     --hmmonly, ~70x faster than the CM and as sensitive for these conserved genes).
     Returns {fam: (arrays tested, arrays with a 45S rRNA gene in a flank)}."""
     out = {f: (0, 0) for f in fams}
-    if not fams or not Path(cm).exists():
-        if fams:
-            log.warning(f"classify: rRNA models missing ({cm}); rDNA neighbourhood test skipped")
+    if not fams:
         return out
+    if not Path(cm).exists():
+        raise CenrepError(f"rRNA models missing: {cm} (part of the cenrep package; reinstall it)")
     workdir.mkdir(parents=True, exist_ok=True)
     q, tbl = workdir / "flanks.fa", workdir / "flanks.tbl"
     tested = {}
@@ -237,7 +235,8 @@ def rdna_neighbourhood(fasta, chroms: dict, arrays: pd.DataFrame, fams: list, wo
     return {f: (tested[f], sum(1 for g, _ in hit if g == f)) for f in fams}
 
 
-def trim_overhang(seq: str, workdir: Path, threads: int, min_len: int = 20, ident: float = 0.90) -> str:
+def trim_overhang(seq: str, workdir: Path, threads: int, min_len: int = OVERHANG_MIN_BP,
+                  ident: float = FAMILY_IDENT) -> str:
     """Trim a terminally redundant consensus to its true period. A consensus that is one unit plus the start of the
     next unit (Msookensis: Cent728 + 68 bp = 796 bp) has its prefix recurring at position p and running to the end;
     its HMM then outscores the true monomer model on every array. Internal motif repeats (not reaching the end)
@@ -262,7 +261,7 @@ def frame_rotation(seq: str, refs: dict, workdir: Path, threads: int, ident: flo
     lexicographic rotations put near-identical subfamilies out of phase (110/178 bp), so their hits
     half-overlapped and a tenth or more of the array bp stayed unannotated."""
     seq = seq.upper()
-    cand = {k: v for k, v in refs.items() if abs(len(v) / len(seq) - 1) <= 0.15}
+    cand = {k: v for k, v in refs.items() if abs(len(v) / len(seq) - 1) <= RELATED_LEN_TOL}
     if cand:
         pairs = blast_pairs({"q": seq}, cand, workdir, threads)
         best = None
@@ -293,7 +292,7 @@ def dedup_families(cons: dict, order: list, workdir: Path, threads: int, ident: 
         if f in merged:
             continue
         for g in order[i + 1:]:
-            if g in merged or abs(len(cons[g]) / len(cons[f]) - 1) > 0.05:
+            if g in merged or abs(len(cons[g]) / len(cons[f]) - 1) > LEN_TOL:
                 continue
             short = min(len(cons[f]), len(cons[g]))
             if any(h[0] >= 100 * ident and h[2] - h[1] + 1 >= 0.9 * short for h in pairs.get((g, f), [])):
@@ -317,7 +316,7 @@ def chain_groups(cons: dict, order: list, workdir: Path, threads: int, ident: fl
         pairs = blast_pairs(cons, cons, workdir, threads)
         for (a, b), hs in pairs.items():
             la, lb = len(cons[a]), len(cons[b])
-            if a == b or abs(la / lb - 1) > 0.15:
+            if a == b or abs(la / lb - 1) > RELATED_LEN_TOL:
                 continue
             if any(h[0] >= 100 * ident and h[2] - h[1] + 1 >= 0.8 * min(la, lb) for h in hs):
                 ra, rb = find(a), find(b)
@@ -326,7 +325,7 @@ def chain_groups(cons: dict, order: list, workdir: Path, threads: int, ident: fl
     return {f: find(f) for f in cons}
 
 
-def msa_consensus(rows: list, max_gap: float = 0.5) -> str:
+def msa_consensus(rows: list, max_gap: float = MSA_MAX_GAP) -> str:
     arr = np.array([list(r) for r in rows])
     out = []
     for col in arr.T:
@@ -401,7 +400,7 @@ def sample_monomers(hmm, intervals: list, fastas: dict, p, threads: int, rng: ra
             if h.evalue > p.nhmmer_evalue:
                 continue
             a = h.best_domain.alignment
-            if a.hmm_to - a.hmm_from + 1 < 0.9 * hmm.M:
+            if a.hmm_to - a.hmm_from + 1 < FULL_MONOMER_COV * hmm.M:
                 continue
             src = raw[int(h.name[1:])]
             lo, hi = pad_hit(*sorted((a.target_from, a.target_to)), h.best_domain.strand,

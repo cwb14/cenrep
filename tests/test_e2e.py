@@ -135,6 +135,17 @@ def test_bgzipped_inputs_give_identical_results(synth_run, tmp_path):
     assert fam(gdir).equals(fam(cdir))
 
 
-def test_cli_help():
+def test_cli_help_is_short():
+    """Thresholds are internal constants (params.py), not options."""
     r = subprocess.run([sys.executable, "-m", "cenrep", "run", "--help"], capture_output=True, text=True)
-    assert r.returncode == 0 and "--cluster-gap" in r.stdout and "--complex-dir" in r.stdout
+    assert r.returncode == 0 and "GENOME_DIR" in r.stdout and "--outdir" in r.stdout
+    assert "--cluster-gap" not in r.stdout and r.stdout.count("\n  -") <= 8
+
+
+def test_cli_needs_a_genome_dir_and_fails_clearly(tmp_path):
+    run = lambda *a: subprocess.run([sys.executable, "-m", "cenrep", "run", *a], capture_output=True, text=True)
+    assert run().returncode == 2
+    r = run(str(tmp_path / "empty"))
+    assert r.returncode == 1 and "no *.fa genomes" in r.stderr
+    r = run("--complex-dir", str(tmp_path / "empty"))                      # batch-driver alias
+    assert r.returncode == 1 and "no *.fa genomes" in r.stderr

@@ -9,7 +9,7 @@ import pyhmmer
 
 from . import __version__, annotate, centromere, classify, families, hor, output, plot, trf
 from .genomes import discover_genomes, load_genes
-from .params import Params, format_borrow, parse_borrow, to_dict
+from .params import MAX_CHROMOSOMES, Params, format_borrow, parse_borrow, to_dict
 from .util import CenrepError, log, require_tools
 
 STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "output", "plot"]
@@ -48,16 +48,16 @@ STAGE_PARAMS = {
     "plot": [],
 }
 TOOLS = ["trf", "makeblastdb", "blastn", "mafft", "cd-hit-est", "minimap2", "cmsearch"]
-MAX_SELF_SEQS = 50      # a self-classified genome with more sequences is probably not chromosome-level
 
 
 class Pipeline:
-    def __init__(self, complex_dir, threads: int, trf_cache, p: Params, force: str = None):
+    def __init__(self, complex_dir, threads: int, trf_cache, p: Params, force: str = None, out_dir=None):
         self.cdir = Path(complex_dir).resolve()
         self.name = self.cdir.name
-        self.out = self.cdir / "centromere"
+        self.out = Path(out_dir).resolve() if out_dir else self.cdir / "centromere"
         self.work = self.out / "work"
-        self.threads, self.cache = threads, Path(trf_cache).resolve()
+        self.threads = threads
+        self.cache = Path(trf_cache).resolve() if trf_cache else self.work / "trf_cache"
         genomes = discover_genomes(self.cdir)
         self.borrow = self._check_borrow(parse_borrow(p.classify_from), {g.name for g in genomes})
         self.p = p = replace(p, classify_from=format_borrow(self.borrow))
@@ -65,7 +65,7 @@ class Pipeline:
         self.genomes = [g for g in genomes if g.name not in self.borrow] + \
                        [g for g in genomes if g.name in self.borrow]
         for g in self.genomes:
-            if g.name not in self.borrow and len(g.chroms) > MAX_SELF_SEQS:
+            if g.name not in self.borrow and len(g.chroms) > MAX_CHROMOSOMES:
                 log.warning(f"{g.name}: {len(g.chroms)} sequences; classify treats each as a chromosome "
                             f"(prevalence = share of sequences). Use a chromosome-level FASTA, or --classify-from "
                             f"for a contig assembly")
@@ -148,6 +148,8 @@ class Pipeline:
     # ---------------------------------------------------------------- driver
     def run(self) -> None:
         require_tools(TOOLS)
+        if not families.RRNA_CM.exists():
+            raise CenrepError(f"rRNA models missing: {families.RRNA_CM} (part of the cenrep package; reinstall it)")
         t0 = time.time()
         log.info(f"cenrep {__version__}: {self.name} [{', '.join(g.name for g in self.genomes)}], "
                  f"{self.threads} threads")

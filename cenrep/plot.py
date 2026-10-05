@@ -1,5 +1,5 @@
 """S8: centromere overview: one panel per genome (A, B, ...; two columns), one track per chromosome; a borrowed
-(contig) genome, or one with more than MAX_ALL sequences, shows the MAX_TRACKS called sequences with the most
+(contig) genome, or one with more than MAX_CHROMOSOMES sequences, shows the MAX_TRACKS called sequences with the most
 centromeric satellite. Every track has the same height (capped so the figure stays <= ~13 in tall).
 Track = satellite bp per 100-kb bin (primary families coloured, cen-associated grey), scaled gene density line,
 and a box for the centromere call (dashed for fallback calls). No titles; panel letters upper-left.
@@ -15,6 +15,7 @@ import numpy as np  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Patch, Rectangle  # noqa: E402
 
+from .params import MAX_CHROMOSOMES  # noqa: E402
 from .util import union_bp  # noqa: E402
 
 OKABE_ITO = ["#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7"]
@@ -24,7 +25,6 @@ GENE = "#999999"        # context: grey, drawn under the satellite bars
 BIN = 100_000
 H = 0.8
 MAX_TRACKS = 20
-MAX_ALL = 50            # chromosome-level genomes with up to this many sequences show them all
 TRACK_IN, TRACKS_MAX_IN = 0.32, 12.0
 
 
@@ -61,10 +61,10 @@ def track_height(heights: list) -> float:
 
 def panel_tracks(pn: dict, max_tracks: int = MAX_TRACKS) -> tuple:
     """(tracks [(chrom, length)], y label). Chromosome-level genomes show every sequence; a borrowed (contig)
-    genome, or one with more than MAX_ALL sequences, shows the max_tracks called ones with the most
+    genome, or one with more than MAX_CHROMOSOMES sequences, shows the max_tracks called ones with the most
     centromeric-satellite bp, longest first."""
     chroms = list(pn["chroms"].items())
-    if len(chroms) <= max_tracks or (not pn.get("borrowed") and len(chroms) <= MAX_ALL):
+    if len(chroms) <= max_tracks or (not pn.get("borrowed") and len(chroms) <= MAX_CHROMOSOMES):
         return chroms, pn["genome"]
     called = [c for c, _ in chroms if pn["regions"].get(c, {}).get("evidence", "none") != "none"]
     a = pn["arrays"][pn["arrays"].cls == "centromeric"]

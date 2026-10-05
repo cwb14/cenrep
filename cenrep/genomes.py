@@ -31,16 +31,27 @@ def load_fai(fasta) -> dict:
     return out
 
 
+FASTA_EXT = (".fa", ".fasta", ".fna")
+
+
+def _fasta_name(f: Path):
+    """Genome name = file name without its FASTA extension (and .gz), or None if f is not a FASTA."""
+    n = f.name[:-3] if f.name.endswith(".gz") else f.name
+    ext = next((e for e in FASTA_EXT if n.endswith(e)), None)
+    return n[:-len(ext)] if ext else None
+
+
 def discover_genomes(complex_dir) -> list:
-    """One genome per *.fa, or bgzip *.fa.gz with .fai + .gzi (read through pysam); name = file name without
-    .fa[.gz]. Genomes are ordered by file name."""
+    """One genome per FASTA (*.fa, *.fasta, *.fna; plain with .fai, or bgzip .gz with .fai + .gzi; read through
+    pysam); name = file name without the extension. Genomes are ordered by file name."""
     complex_dir = Path(complex_dir)
-    fas = sorted(list(complex_dir.glob("*.fa")) + list(complex_dir.glob("*.fa.gz")), key=lambda f: f.name)
+    fas = sorted((f for f in complex_dir.iterdir() if f.is_file() and _fasta_name(f)), key=lambda f: f.name) \
+        if complex_dir.is_dir() else []
     if not fas:
-        raise CenrepError(f"{complex_dir}: no *.fa genomes (plain, or bgzip *.fa.gz)")
+        raise CenrepError(f"{complex_dir}: no *.fa genomes (*.fa/*.fasta/*.fna, plain or bgzip .gz)")
     seen = {}
     for f in fas:
-        name = f.name[:-len(".fa.gz")] if f.name.endswith(".fa.gz") else f.stem
+        name = _fasta_name(f)
         if name in seen:
             raise CenrepError(f"{complex_dir}: genome {name} is given twice ({seen[name].name}, {f.name})")
         if f.name.endswith(".gz") and not Path(str(f) + ".gzi").exists():
@@ -50,15 +61,7 @@ def discover_genomes(complex_dir) -> list:
     return [Genome(n, f, load_fai(f)) for n, f in seen.items()]
 
 
-def find_gene_gff(complex_dir, genome: str):
-    for gff in sorted(Path(complex_dir).glob(f"window_identity/*/{genome}_mod.gff")):
-        ex = gff.parent / "run.exit"
-        if ex.exists() and ex.read_text().strip() == "0":
-            return gff
-    return None
-
-
-def native_gene_gff(complex_dir, genome: str):
+def gene_gff(complex_dir, genome: str):
     for ext in (".gff3", ".gff3.gz"):
         f = Path(complex_dir) / "genes" / f"{genome}{ext}"
         if f.exists():
@@ -66,9 +69,11 @@ def native_gene_gff(complex_dir, genome: str):
     return None
 
 
-def load_native_genes(gff, chroms=None) -> tuple:
-    """One midpoint per gene locus (isoforms counted once); loci with a locus_type other than coding skipped.
-    Returns ({chrom: sorted midpoints}, number of gene lines on sequences not in chroms)."""
+def load_gene_gff(gff, chroms=None) -> tuple:
+    """One midpoint per gene locus from `gene` lines (isoforms counted once). Non-coding loci are skipped: a
+    locus_type other than coding, or a gene_biotype/biotype other than protein_coding (NCBI/Ensembl `gene` lines
+    include tRNA, ncRNA and pseudogene loci). Returns ({chrom: sorted midpoints}, gene lines on sequences not in
+    chroms)."""
     mids, foreign = {}, 0
     with (gzip.open(gff, "rt") if str(gff).endswith(".gz") else open(gff)) as f:
         for n, line in enumerate(f, 1):
@@ -83,6 +88,8 @@ def load_native_genes(gff, chroms=None) -> tuple:
             attrs = dict(kv.split("=", 1) for kv in p[8].split(";") if "=" in kv)
             if attrs.get("locus_type", "coding") != "coding":
                 continue
+            if attrs.get("gene_biotype", attrs.get("biotype", "protein_coding")) != "protein_coding":
+                continue
             try:
                 mids.setdefault(p[0], []).append((int(p[3]) - 1 + int(p[4])) // 2)
             except ValueError:
@@ -92,41 +99,19 @@ def load_native_genes(gff, chroms=None) -> tuple:
 
 def load_genes(complex_dir, genome: str, chroms=None):
     """{chrom: sorted np.int64 array of gene midpoints (0-based)}, or None without gene evidence.
-    Source: <complex>/genes/<genome>.gff3[.gz] (gene lines, native seqids; only chroms when given), else the
-    miniprot mRNA of a finished window_identity run."""
-    complex_dir = Path(complex_dir)
-    native = native_gene_gff(complex_dir, genome)
-    if native is not None:
-        mids, foreign = load_native_genes(native, chroms)
-        if not mids:
-            log.warning(f"{genome}: no gene in {native} lies on a sequence of the FASTA "
-                        f"({foreign} on other sequence names); gene evidence off (no_genes)")
-            return None
-        if foreign:
-            log.info(f"{genome}: {foreign} genes in {native.name} on sequences not in the FASTA ignored")
-        return mids
-    gff = find_gene_gff(complex_dir, genome)
-    cmap = complex_dir / "window_identity" / "genomes" / "chr_map.tsv"
-    if gff is None or not cmap.exists():
-        log.warning(f"{genome}: no genes/{genome}.gff3 or finished window_identity gene GFF; "
-                    f"gene evidence off (no_genes)")
+    Source: <complex>/genes/<genome>.gff3[.gz] (gene lines, native seqids; only chroms when given)."""
+    gff = gene_gff(complex_dir, genome)
+    if gff is None:
+        log.warning(f"{genome}: no genes/{genome}.gff3[.gz]; gene evidence off (no_genes)")
         return None
-    back = {}
-    with open(cmap) as f:
-        for line in f:
-            p = line.rstrip("\n").split("\t")
-            if len(p) >= 3 and p[0] == genome:
-                back[f"{p[0]}_{p[2]}"] = p[1]
-    mids = {}
-    with open(gff) as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            p = line.split("\t")
-            if len(p) < 5 or p[2] != "mRNA" or p[0] not in back:
-                continue
-            mids.setdefault(back[p[0]], []).append((int(p[3]) - 1 + int(p[4])) // 2)
-    return {c: np.sort(np.array(v, dtype=np.int64)) for c, v in mids.items()}
+    mids, foreign = load_gene_gff(gff, chroms)
+    if not mids:
+        log.warning(f"{genome}: no gene in {gff} lies on a sequence of the FASTA "
+                    f"({foreign} on other sequence names); gene evidence off (no_genes)")
+        return None
+    if foreign:
+        log.info(f"{genome}: {foreign} genes in {gff.name} on sequences not in the FASTA ignored")
+    return mids
 
 
 def count_in(mids, start: int, end: int) -> int:

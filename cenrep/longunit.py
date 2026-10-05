@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pysam
 
+from .params import LEN_TOL
 from .util import log, merge_intervals, run
 
 LU_COLS = ["chrom", "start", "end", "unit", "copies", "identity"]
@@ -86,7 +87,7 @@ def merge_hits(hits, chrom: str) -> list:
         for h in sorted(g, key=lambda x: x[2]):
             for b in bases:
                 k = round(h[2] / b)
-                if k >= 1 and abs(h[2] / b - k) <= 0.05 * k:
+                if k >= 1 and abs(h[2] / b - k) <= LEN_TOL * k:
                     bases[b].append(h)
                     break
             else:

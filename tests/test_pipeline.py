@@ -19,9 +19,9 @@ def test_trf_cache_key_depends_on_trf_settings(tmp_path):
     assert a != cache_path(tmp_path, "abc", Params(trf_chunk=1_000_000))
 
 
-def test_help_covers_every_parameter():
-    from cenrep.params import HELP
-    assert set(HELP) == {f.name for f in fields(Params)}
+def test_every_parameter_has_a_reason():
+    from cenrep.params import REASON
+    assert set(REASON) == {f.name for f in fields(Params)} and all(REASON.values())
 
 
 def _complex(d, names, nseq=1):

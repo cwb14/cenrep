@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .genomes import count_in
+from .params import RELATED_LEN_TOL
 from .util import clipped_bp, log, union_bp
 
 CLS_COLS = ["family", "bp", "n_arrays", "prevalence", "concentration", "subtel_frac", "gene_ratio",
@@ -54,7 +55,7 @@ def related(f: str, g: str, fam_info) -> bool:
     if fam_info is None:
         return True
     a, b = fam_info[f], fam_info[g]
-    return a["superfamily"] == b["superfamily"] or abs(a["length"] / b["length"] - 1) <= 0.15
+    return a["superfamily"] == b["superfamily"] or abs(a["length"] / b["length"] - 1) <= RELATED_LEN_TOL
 
 
 def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None):

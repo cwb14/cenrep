@@ -100,9 +100,37 @@ def test_trf_steals_stale_lock(tmp_path, test_params):
     cache = tmp_path / "cache"
     cache.mkdir()
     path = trf.cache_path(cache, md5_file(g.fasta), test_params)
-    trf.lock_path(path).write_text("999999999")              # dead pid
+    import socket
+    trf.lock_path(path).write_text(f"{socket.gethostname()} 999999999")   # dead pid on this host
     out = trf.trf_genomes([g], cache, 1, test_params)
     assert out["g"].exists() and not trf.lock_path(path).exists()
+
+
+def test_trf_never_steals_a_lock_held_on_another_host(tmp_path, test_params, monkeypatch):
+    """On a shared filesystem (SLURM nodes) a PID from another host cannot be checked here: its lock is never stolen."""
+    import threading
+    import time
+    import cenrep.trf as trf
+    from cenrep.util import md5_file
+    monkeypatch.setattr(trf, "POLL", 0.1)
+    g = _one_genome(tmp_path)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    path = trf.cache_path(cache, md5_file(g.fasta), test_params)
+    lock = trf.lock_path(path)
+    lock.write_text("some-other-node 999999999")             # dead here, but on another host
+    t = threading.Thread(target=lambda: trf.trf_genomes([g], cache, 1, test_params), daemon=True)
+    t.start()
+    time.sleep(0.5)
+    assert t.is_alive() and lock.read_text() == "some-other-node 999999999"
+
+
+def test_trf_lock_records_host_and_pid(tmp_path):
+    import os
+    import socket
+    import cenrep.trf as trf
+    lock = tmp_path / "x.lock"
+    assert trf._acquire(lock) and lock.read_text() == f"{socket.gethostname()} {os.getpid()}"
 
 
 @pytest.mark.skipif(not have("trf"), reason="trf missing")

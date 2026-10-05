@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -12,11 +13,9 @@ from pathlib import Path
 import pandas as pd
 import pysam
 
+from .params import TRF_ARGS
 from .util import log, md5_file, run
 
-# Benson's recommended weights (match 2, mismatch 7, indel 7, PM 80, PI 10), minscore 50,
-# max period 2000 (TRF maximum), -l 6: chunks are <= 5 Mb so no array is longer.
-TRF_ARGS = ["2", "7", "7", "80", "10", "50", "2000", "-l", "6", "-h", "-ngs"]
 POLL = 15   # seconds between checks while another process holds a genome's TRF lock
 COLS = ["chrom", "start", "end", "period", "copies", "consensus_size",
         "pct_match", "pct_indel", "score", "entropy", "consensus"]   # start/end 0-based half-open
@@ -105,21 +104,29 @@ def _alive(pid: int) -> bool:
     return True
 
 
+def _owner(lock: Path) -> tuple:
+    """(host, pid) of a lock; a lock written by cenrep < 0.5 holds only the pid (single-host use)."""
+    x = lock.read_text().split()
+    return (socket.gethostname(), int(x[0])) if len(x) == 1 else (x[0], int(x[1]))
+
+
 def _acquire(lock: Path) -> bool:
-    """Create the lock file atomically; steal it if its owner process is dead."""
+    """Create the lock file atomically ('host pid'); steal it only if its owner ran on this host and is dead. A
+    process on another host (shared filesystem, SLURM nodes) cannot be checked from here, so its lock is never
+    stolen: remove a stale one by hand."""
     try:
         fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         try:
-            pid = int(lock.read_text().strip() or 0)
-        except (OSError, ValueError):
+            host, pid = _owner(lock)
+        except (OSError, ValueError, IndexError):
             return False                          # being written right now; retry next poll
-        if pid and not _alive(pid):
+        if host == socket.gethostname() and pid and not _alive(pid):
             log.warning(f"trf: removing stale lock {lock.name} (pid {pid} is gone)")
             lock.unlink(missing_ok=True)
             return _acquire(lock)
         return False
-    os.write(fd, str(os.getpid()).encode())
+    os.write(fd, f"{socket.gethostname()} {os.getpid()}".encode())
     os.close(fd)
     return True
 
@@ -189,7 +196,8 @@ def trf_genomes(genomes, cache_dir, threads: int, p) -> dict:
             continue
         for path, g in todo.items():
             if path not in waiting_logged:
-                log.info(f"trf: {g.name} is being computed by another run; waiting for {path.name}")
+                log.info(f"trf: {g.name} is being computed by another run; waiting for {path.name} "
+                         f"(lock {lock_path(path).name})")
                 waiting_logged.add(path)
         time.sleep(POLL)
 
