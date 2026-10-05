@@ -111,3 +111,24 @@ def test_borrowed_contig_end_flag_does_not_lower_confidence(tmp_path):
         bor = finalize("c1", 200_000, call, h, None, None, Params(), borrowed=True)
     assert own["flags"] == "near_end" and own["confidence"] == "medium"
     assert bor["flags"] == "contig_end" and bor["confidence"] == "high"
+
+
+def test_without_a_dominant_satellite_or_te_evidence_calls_are_capped_low(tmp_path):
+    """Aegilops: satellite-free centromeres, but interstitial satellite blocks pass every per-family test. With no
+    dominant family and no retrotransposon evidence, satellite evidence cannot tell them apart: confidence low."""
+    g, _ = _contigs(tmp_path)
+    call = dict(cen_start=60_000, cen_end=120_000, evidence="satellite", main_family="A", main_family_bp=60_000,
+                sat_bp=60_000, second_cluster_bp=0, cen_families="A")
+    with pysam.FastaFile(str(g.fasta)) as h:
+        p = Params(subtel_min_bp=10_000, low_sat_bp=10_000)
+        free = finalize("c1", 200_000, call, h, None, None, p)
+        capped = finalize("c1", 200_000, call, h, None, None, p, capped=True)
+        disc = finalize("c1", 200_000, call, h, None, None, p, te_flag="te_discordant")
+    assert free["confidence"] == "high" and free["flags"] == "."
+    assert capped["confidence"] == "low" and capped["flags"] == "no_dominant_satellite"
+    assert disc["confidence"] == "medium" and disc["flags"] == "te_discordant"
+    weak = dict(call, evidence="weak_satellite", sat_bp=8_000)
+    with pysam.FastaFile(str(g.fasta)) as h:
+        conc = finalize("c1", 200_000, weak, h, None, None, p, te_flag="te_concordant")
+    assert conc["confidence"] == "medium" and "te_concordant" in conc["flags"]          # was low on its own
+

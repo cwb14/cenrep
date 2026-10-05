@@ -152,3 +152,50 @@ def test_rdna_associated_family_becomes_ineligible():
     out = apply_rdna(fams, {"igs": (10, 9), "sat": (10, 0), "few": (2, 1)}, Params()).set_index("family")
     assert not out.loc["igs", "eligible"] and out.loc["igs", "reason"].startswith("rDNA-associated")
     assert out.loc["sat", "eligible"] and out.loc["few", "eligible"] == (1 / 2 < Params().rdna_array_frac)
+
+
+def test_te_rejected_needs_a_majority_of_disagreeing_chromosomes():
+    from cenrep.classify import Cluster, te_rejected
+    core = dict(start=1_000_000, end=1_500_000)
+    cores = {c: core for c in ("c1", "c2", "c3")}
+    at, away = Cluster(1_100_000, 1_400_000, 200_000), Cluster(8_000_000, 8_300_000, 200_000)
+    fams = pd.DataFrame([dict(family="F", cls="centromeric", defines="c1,c2,c3"),
+                         dict(family="H", cls="other", defines=".")])
+    m = lambda x: {("F", "c1"): x[0], ("F", "c2"): x[1], ("F", "c3"): x[2]}
+    assert te_rejected(fams, m([at, at, away]), cores) == {}                    # 1 of 3 disagree
+    assert te_rejected(fams, m([away, away, at]), cores) == {"F": (2, 3)}
+    assert te_rejected(fams, m([away, away, away]), {}) == {}                   # no core: no test
+
+
+def test_te_vote_is_per_family_kind_so_subfamilies_are_not_rejected_alone():
+    """A. thaliana CEN180 subfamily / B. juncea CentBr2: a subfamily defining few chromosomes, away from the core
+    there, belongs to a kind that agrees overall; an unrelated family must still be judged on its own."""
+    from cenrep.classify import Cluster, te_rejected
+    core = dict(start=1_000_000, end=1_500_000)
+    cores = {c: core for c in ("c1", "c2", "c3", "c4")}
+    at, away = Cluster(1_100_000, 1_400_000, 200_000), Cluster(8_000_000, 8_300_000, 200_000)
+    fams = pd.DataFrame([dict(family="A178", cls="centromeric", defines="c1,c2,c3"),
+                         dict(family="A176", cls="centromeric", defines="c4"),
+                         dict(family="X90", cls="centromeric", defines="c4")])
+    info = {"A178": dict(superfamily="S1", length=178), "A176": dict(superfamily="S1", length=176),
+            "X90": dict(superfamily="S9", length=90)}
+    mains = {("A178", "c1"): at, ("A178", "c2"): at, ("A178", "c3"): at, ("A176", "c4"): away, ("X90", "c4"): away}
+    assert te_rejected(fams, mains, cores, info) == {"X90": (1, 1)}
+
+
+
+def test_only_decisive_retrotransposon_evidence_rejects():
+    """B. juncea A: only pericentromeric clades (Retand, Athila) qualify; their cores sit beside CentBr. Evidence that
+    is not the centromere-specific CRM lineage flags disagreement but never rejects the satellite."""
+    from cenrep.classify import Cluster, choose_with_te
+    fams = pd.DataFrame([dict(family="CentBr", bp=500_000, n_arrays=20, prevalence=1.0, concentration=0.9,
+                              subtel_frac=0.0, gene_ratio=0.1, median_main_bp=250_000, eligible=True, cls="other",
+                              strength=".", defines=".", dominant=False, reason="eligible")])
+    chroms = {"c1": 20_000_000, "c2": 20_000_000}
+    mains = {("CentBr", c): Cluster(1_100_000, 1_400_000, 250_000) for c in chroms}
+    far = {c: dict(start=9_000_000, end=9_500_000) for c in chroms}
+    p = Params()
+    out, _, rej = choose_with_te(fams, mains, chroms, p, None, ("Retand", far, False))
+    assert rej == {} and set(out.cls) == {"centromeric"}
+    out, _, rej = choose_with_te(fams, mains, chroms, p, None, ("CRM", far, True))
+    assert rej == {"CentBr": (2, 2)} and set(out.cls) == {"other"}

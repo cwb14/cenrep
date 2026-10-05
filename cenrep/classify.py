@@ -6,11 +6,12 @@ import numpy as np
 import pandas as pd
 
 from .genomes import count_in
+from .te import agrees
 from .params import RELATED_LEN_TOL
 from .util import clipped_bp, log, union_bp
 
 CLS_COLS = ["family", "bp", "n_arrays", "prevalence", "concentration", "subtel_frac", "gene_ratio",
-            "median_main_bp", "eligible", "cls", "strength", "defines", "reason"]
+            "median_main_bp", "eligible", "cls", "strength", "defines", "dominant", "reason"]
 
 
 @dataclass
@@ -99,7 +100,7 @@ def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None):
         rows.append(dict(family=fam, bp=bp, n_arrays=len(g), prevalence=prevalence, concentration=conc,
                          subtel_frac=subtel_frac, gene_ratio=gene_ratio,
                          median_main_bp=float(np.median(main_bps)) if main_bps else 0.0,
-                         eligible=not fails, cls="other", strength=".", defines=".",
+                         eligible=not fails, cls="other", strength=".", defines=".", dominant=False,
                          reason="; ".join(fails) if fails else "eligible"))
     return pd.DataFrame(rows, columns=CLS_COLS), mains
 
@@ -130,6 +131,7 @@ def choose_centromeric(fams: pd.DataFrame, mains: dict, chroms: dict, p, fam_inf
         for f in fl:
             defines.setdefault(f, []).append(c)
     fams = fams.copy()
+    fams["dominant"] = fams.family.isin(dominant)
     for i, r in fams.iterrows():
         if r.family in defines:
             strong = r.prevalence >= p.strong_prevalence and r.median_main_bp >= p.strong_cluster_bp
@@ -195,3 +197,55 @@ def assign_cen_associated(fams: pd.DataFrame, arrays: pd.DataFrame, regions: dic
             fams.loc[i, ["cls", "reason"]] = ["cen_associated",
                                               f"{r.reason}; {inside / r.bp:.0%} of bp inside centromeres"]
     return fams
+
+
+def te_rejected(fams: pd.DataFrame, mains: dict, cores, fam_info=None) -> dict:
+    """Centromeric family kinds (related families: subfamilies, CentBr1/2, CEN180/AthCEN159) whose main clusters
+    disagree with the retrotransposon core on the majority of the chromosomes they define, for EVERY concentrated
+    clade (cores: one {chrom: core} per candidate clade, or a single dict). A chromosome agrees if any member of the
+    kind agrees there; judged per kind, so a subfamily on a few chromosomes is not rejected alone; judged against
+    every clade, because which concentrated clade is centromeric is not known. Returns {family: (disagreeing,
+    tested)} (counts for the most supportive clade) for every member of each rejected kind."""
+    cands = [cores] if isinstance(cores, dict) else list(cores)
+    cen = [r for r in fams[fams.cls == "centromeric"].itertuples(index=False)]
+    kinds = []                                           # connected components of `related`
+    for r in cen:
+        hit = [k for k in kinds if any(related(r.family, x.family, fam_info) for x in k)]
+        merged = [r] + [x for k in hit for x in k]
+        kinds = [k for k in kinds if k not in hit] + [merged]
+    out = {}
+    for k in kinds:
+        tallies = []
+        for cc in cands:
+            votes = {}
+            for r in k:
+                for c in str(r.defines).split(","):
+                    m, core = mains.get((r.family, c)), cc.get(c)
+                    if core and m:
+                        votes[c] = votes.get(c, False) or agrees(m.start, m.end, core)
+            if votes:
+                tallies.append((sum(not v for v in votes.values()), len(votes)))
+        if tallies and all(bad * 2 > n for bad, n in tallies):
+            best = min(tallies, key=lambda t: t[0] / t[1])
+            out.update({r.family: best for r in k})
+    return out
+
+
+def choose_with_te(fams: pd.DataFrame, mains: dict, chroms: dict, p, fam_info, te):
+    """choose_centromeric, then drop families away from the retrotransposon centromere and choose again, until no
+    centromeric family disagrees: a family that was outcompeted by a rejected one (e.g. the CentT550-like satellite
+    beside interstitial blocks in Aegilops) gets its chance. te: (clade, {chrom: significant core}, decisive) or
+    None; only decisive evidence (CRM, te.marker) rejects. Returns (fams, per_chrom, {rejected family: (disagreeing, tested)})."""
+    rejected = {}
+    while True:
+        out, per_chrom = choose_centromeric(fams, mains, chroms, p, fam_info)
+        rej = te_rejected(out, mains, [te[1]], fam_info) if te and te[2] else {}
+        if not rej:
+            return out, per_chrom, rejected
+        rejected.update(rej)
+        fams = fams.copy()
+        for i, r in fams.iterrows():
+            if r.family in rej:
+                k, n = rej[r.family]
+                fams.loc[i, ["eligible", "reason"]] = [
+                    False, f"main clusters away from the {te[0]} retrotransposon centromere on {k}/{n} chromosomes"]

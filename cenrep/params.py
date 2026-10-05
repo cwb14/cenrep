@@ -36,6 +36,15 @@ MSA_MAX_GAP = 0.5              # consensus keeps alignment columns occupied in t
 RDNA_TAG_EVALUE = 1e-5         # cmsearch E for an rRNA gene inside a family consensus dimer
 RDNA_FLANK_EVALUE = 1e-10      # cmsearch --hmmonly E for 45S genes in array flanks (stricter: long flank queries)
 
+# ---- retrotransposon evidence (docs/2026-10-05-retrotransposon-evidence.md)
+TE_BINS = 500                  # density profile resolution: 1/500 of the chromosome
+TE_MIN_BIN = 1_000             # ... but bins of at least 1 kb
+TE_SMOOTH = 5                  # smoothing window, in bins
+TE_MIN_ELEMENTS = 10           # fewer elements of a clade on a chromosome: no peak estimate
+TE_ALPHA = 1e-3                # core significance: binomial tail x (L / core length) < 0.001 (conventional level)
+TE_CENTROMERIC_CLADE = "CRM"   # CR chromoviruses (CRM maize, CRR rice, CRB Brassica, CRS sugarcane) are
+                               # centromere-specific in plants; other clades are often pericentromeric
+
 
 @dataclass
 class Params:

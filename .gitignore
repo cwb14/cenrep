@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+# temporary: old-path link for runs started on v0.4.3 (Avena, Aegilops ventricosa); remove when they finish
+/data/

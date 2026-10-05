@@ -13,10 +13,10 @@ from .util import clipped_bp, overlap, parse_fasta_text, union_bp, write_fasta
 SUMMARY_COLS = ["chrom", "chrom_len", "cen_start", "cen_end", "cen_len", "evidence", "confidence", "flags",
                 "main_family", "main_family_bp", "cen_sat_bp", "sat_fraction", "n_arrays", "largest_array_bp",
                 "n_monomers", "mean_identity", "hor_monomers", "hor_fraction", "top_tandem_hor", "n_gaps",
-                "gap_bp", "n_genes", "gene_ratio", "other_tandem_bp"]
+                "gap_bp", "n_genes", "gene_ratio", "other_tandem_bp", "te_clade", "te_core_start", "te_core_end"]
 FAMTAB_COLS = ["family", "fam_id", "superfamily", "consensus_len", "hmm_mode", "rdna", "genome", "class", "strength",
                "defines", "bp", "n_arrays", "prevalence", "concentration", "subtel_frac", "gene_ratio",
-               "median_main_bp", "eligible", "reason"]
+               "median_main_bp", "eligible", "dominant", "reason"]
 LEVEL = {"centromere": 0, "satellite_DNA": 1, "tandem_repeat": 1, "higher_order_repeat": 2, "satellite_monomer": 3}
 _ESC = {"%": "%25", ";": "%3B", "=": "%3D", "&": "%26", "\t": "%09", "\n": "%0A", "\r": "%0D"}
 
@@ -137,7 +137,9 @@ def write_genome(d: dict, names: dict, outdir, p) -> None:
             ID=f"cen_{c}", evidence=rg["evidence"], confidence=rg["confidence"], flags=rg["flags"],
             main_family=nm(rg["main_family"]), satellite_bp=st["cen_sat_bp"],
             sat_fraction=round(st["cen_sat_bp"] / (rg["cen_end"] - rg["cen_start"]), 3),
-            n_arrays=st["n_arrays"], hor_fraction=st["hor_fraction"], n_genes=rg["n_genes"], gaps=rg["n_gaps"])))
+            n_arrays=st["n_arrays"], hor_fraction=st["hor_fraction"], n_genes=rg["n_genes"], gaps=rg["n_gaps"],
+            te_clade=rg.get("te_clade", "."),
+            te_core=f"{int(rg['te_core_start']) + 1}-{rg['te_core_end']}" if rg.get("te_core_start", ".") != "." else ".")))
     for r in inc.itertuples(index=False):
         hf = "."
         if r.array_id in per_arr.index and per_arr.loc[r.array_id, "classed"]:
@@ -197,7 +199,10 @@ def write_genome(d: dict, names: dict, outdir, p) -> None:
                          n_monomers=st["n_monomers"], mean_identity=st["mean_identity"],
                          hor_monomers=st["hor_monomers"], hor_fraction=st["hor_fraction"],
                          top_tandem_hor=st["top_tandem_hor"], n_gaps=rg["n_gaps"], gap_bp=rg["gap_bp"],
-                         n_genes=rg["n_genes"], gene_ratio=rg["gene_ratio"], other_tandem_bp=union_bp(other_iv)))
+                         n_genes=rg["n_genes"], gene_ratio=rg["gene_ratio"], other_tandem_bp=union_bp(other_iv),
+                         te_clade=rg.get("te_clade", "."),
+                         te_core_start=int(rg["te_core_start"]) + 1 if rg.get("te_core_start", ".") != "." else ".",
+                         te_core_end=rg.get("te_core_end", ".")))
     pd.DataFrame(rows, columns=SUMMARY_COLS).to_csv(outdir / f"{g.name}_centromere_summary.tsv", sep="\t", index=False)
     hu = d["hor_units"].copy()
     hu["family"] = hu.family.map(nm)
@@ -217,7 +222,8 @@ def write_families(fam: pd.DataFrame, data: dict, names: dict, hmm_path, fa_path
                 row.update({"class": x.cls, "strength": x.strength, "defines": x.defines, "bp": x.bp,
                             "n_arrays": x.n_arrays, "prevalence": x.prevalence, "concentration": x.concentration,
                             "subtel_frac": x.subtel_frac, "gene_ratio": x.gene_ratio,
-                            "median_main_bp": x.median_main_bp, "eligible": x.eligible, "reason": x.reason})
+                            "median_main_bp": x.median_main_bp, "eligible": x.eligible,
+                            "dominant": getattr(x, "dominant", False), "reason": x.reason})
             else:
                 row.update({"class": "absent", "bp": 0, "n_arrays": 0, "reason": "no arrays in this genome"})
             rows.append(row)

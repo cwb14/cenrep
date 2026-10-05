@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pyhmmer
 
-from . import __version__, annotate, centromere, classify, families, hor, output, plot, trf
+from . import __version__, annotate, centromere, classify, families, hor, output, plot, te, trf
 from .genomes import discover_genomes, load_genes
 from .params import MAX_CHROMOSOMES, Params, format_borrow, parse_borrow, to_dict
 from .util import CenrepError, log, require_tools
@@ -27,8 +27,9 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.2 = classify: 45S rDNA spacer repeats (arrays flanked by 18S/5.8S/25S genes) are never centromeric.
 # 0.4.3 = inputs: bgzip *.fa.gz genomes (results unchanged: no stage version bump).
 # 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
-STAGE_VERSION = {"trf": "0.3.0", "families": "0.4.4", "annotate": "0.4.0", "classify": "0.4.2",
-                 "centromeres": "0.4.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
+# 0.6.0 = classify: dominant column; centromeres: retrotransposon evidence (tes/), honesty cap without it.
+STAGE_VERSION = {"trf": "0.3.0", "families": "0.4.4", "annotate": "0.4.0", "classify": "0.6.0",
+                 "centromeres": "0.6.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {
     "trf": ["trf_chunk", "trf_overlap"],
@@ -79,7 +80,7 @@ class Pipeline:
             for st in STAGES[STAGES.index(force):]:
                 (self.work / f"{st}.done").unlink(missing_ok=True)
         (self.work / "params.json").write_text(json.dumps(to_dict(p), indent=1))
-        self._genes = {}
+        self._genes, self._te = {}, {}
 
     @staticmethod
     def _check_borrow(borrow: dict, names: set) -> dict:
@@ -209,21 +210,58 @@ class Pipeline:
                 tagged = [f"{f} ({k}/{n})" for f, (n, k) in rd.items() if n and k / n >= self.p.rdna_array_frac]
                 if tagged:
                     log.info(f"classify: {g.name}: rDNA spacer repeats (not centromeric): {', '.join(tagged)}")
-                fams, per_chrom = classify.choose_centromeric(fams, mains, g.chroms, self.p, info)
+                tev = self.te_evidence(g)
+                fams, per_chrom, rejected = classify.choose_with_te(fams, mains, g.chroms, self.p, info, tev)
+                if rejected:
+                    log.info(f"classify: {g.name}: away from the {tev[0]} retrotransposon centromere (not "
+                             f"centromeric): {', '.join(f'{f} ({k}/{n})' for f, (k, n) in rejected.items())}")
                 how = ""
             fams.to_csv(self._p("classify", f"{g.name}.families.tsv"), sep="\t", index=False)
             prim = fams[fams.cls == "centromeric"]
             log.info(f"classify: {g.name}: centromeric{how} = {', '.join(prim.family) or 'none'}; "
                      f"{len(per_chrom)}/{len(g.chroms)} sequences have one")
 
+    def te_evidence(self, g):
+        """(clade, {chrom: significant core}, decisive) of the centromere-marking LTR clade (te.marker), or None
+        (cached)."""
+        if g.name not in self._te:
+            self._te[g.name] = self._te_evidence(g)
+        return self._te[g.name]
+
+    def _te_evidence(self, g):
+        gff = te.te_gff(self.cdir, g.name)
+        if gff is None:
+            log.info(f"{g.name}: no tes/{g.name}.gff3[.gz]; satellite evidence only")
+            return None
+        cands = te.candidate_clades(te.load_te_gff(gff, g.chroms), g.chroms)
+        if not cands:
+            log.info(f"{g.name}: no LTR clade concentrated at one locus on most chromosomes; "
+                     f"satellite evidence only")
+            return None
+        m = te.marker(cands)
+        log.info(f"{g.name}: LTR clades concentrated at one locus per sequence: "
+                 f"{', '.join(f'{c} ({len(x)}/{len(g.chroms)})' for c, x in cands)}; marker {m[0]}"
+                 f"{' (decisive)' if m[2] else ' (flags only)'}")
+        return m
+
     def stage_centromeres(self):
         for g in self.genomes:
             arrays = self.arrays(g)
             fams = self.fams(g, "classify")
             primary = set(fams.family[fams.cls == "centromeric"])
-            rows, lu = centromere.call_regions(g, arrays, primary, self.genes(g), self.trf_table(g),
+            borrowed = g.name in self.borrow
+            tev = None if borrowed else self.te_evidence(g)
+            dominant = fams["dominant"].astype(str).eq("True").any() if "dominant" in fams else True
+            capped = tev is None and not borrowed and bool(primary) and not dominant
+
+            def call_with(prim):
+                return centromere.call_regions(g, arrays, prim, self.genes(g), self.trf_table(g),
                                                self.work / "centromeres" / f"tmp_{g.name}", self.threads, self.p,
-                                               borrowed=g.name in self.borrow)
+                                               borrowed=borrowed, te=tev, capped=capped)
+            rows, lu = call_with(primary)
+            if capped:
+                log.info(f"centromeres: {g.name}: no dominant satellite and no retrotransposon evidence; "
+                         f"calls capped at low confidence")
             fams = classify.assign_cen_associated(fams, arrays, rows, self.p)
             centromere.write_regions(rows, self._p("centromeres", f"{g.name}.regions.tsv"))
             lu.to_csv(self._p("centromeres", f"{g.name}.longunit.tsv"), sep="\t", index=False)
