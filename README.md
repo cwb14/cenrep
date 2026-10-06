@@ -115,6 +115,9 @@ Flags name each reason: `low_satellite`, `competing_cluster`, `near_end`, `diffu
 
 - Short-unit centromeric satellites (< 30 bp; *Drosophila*) and units > 30 kb are outside the search.
 - Non-tandem centromeres are reported as `none` (no retrotransposon input) or by their retrotransposon core.
+- Without retrotransposon input, a dominant but non-centromeric satellite is called centromeric (oat: the 335–360-bp
+  family on every chromosome). The `no_dominant_satellite` cap catches only genomes where no family dominates; give
+  `tes/` input for grasses and other genomes with retrotransposon-based centromeres.
   Holocentric chromosomes have no diagnostic yet.
 - At most 40 families per run, the largest. Satellite-rich genomes (oat, wheat relatives) drop hundreds of small
   families; the centromeric ones tested so far were kept.
