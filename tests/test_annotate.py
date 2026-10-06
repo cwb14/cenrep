@@ -118,3 +118,39 @@ def test_evalue_ref_len_scales_short_sequences(synth_complex, synth_families):
     shared = set(b) & set(s)
     assert shared and all(abs(s[k] / b[k] / 10_000 - 1) < 1e-6 for k in shared if b[k] > 0)
     assert (big.evalue <= 1e-5).all()
+
+
+def _drop_multimer_hits_reference(df, ratio=1.9, min_cov=0.5):
+    """The per-hit loop of cenrep <= 0.6.1, kept as the reference for the vectorised version."""
+    import numpy as np
+    from cenrep.util import union_bp
+    if df.empty:
+        return df
+    df = df.sort_values(["start", "end"]).reset_index(drop=True)
+    s, e, m = df.start.to_numpy(), df.end.to_numpy(), df.model_len.to_numpy()
+    maxlen = int((e - s).max())
+    keep = np.ones(len(df), bool)
+    for i in np.where(m >= ratio * m.min())[0]:
+        lo, hi = np.searchsorted(s, s[i] - maxlen), np.searchsorted(s, e[i])
+        iv = [(max(s[j], s[i]), min(e[j], e[i])) for j in range(lo, hi)
+              if j != i and m[j] * ratio <= m[i] and e[j] > s[i]]
+        if iv and union_bp(iv) >= min_cov * (e[i] - s[i]):
+            keep[i] = False
+    return df[keep].reset_index(drop=True)
+
+
+def test_drop_multimer_hits_matches_the_per_hit_reference():
+    """Avena C genomes: tens of millions of hits, all of models >= 1.9x the 38-bp shortest, made the per-hit loop
+    take hours. The vectorised version must keep exactly the same hits."""
+    import numpy as np
+    rng = np.random.default_rng(9)
+    for trial in range(30):
+        n = int(rng.integers(1, 400))
+        lens = rng.choice([38, 48, 90, 178, 356, 553, 1655], size=n)
+        start = rng.integers(0, 20_000, n)
+        span = (lens * rng.uniform(0.6, 1.0, n)).astype(int) + 1
+        rows = [("c", int(a), int(a + b), rng.choice(["+", "-"]), f"f{L}", 10.0, 1e-9, 1, L, int(L), 0.9)
+                for a, b, L in zip(start, span, lens)]
+        df = pd.DataFrame(rows, columns=MON_COLS)
+        a, b = drop_multimer_hits(df), _drop_multimer_hits_reference(df)
+        assert a.equals(b), trial

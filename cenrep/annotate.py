@@ -94,22 +94,44 @@ def search_genome(hmms, genome, threads: int, evalue: float, chunk: int = ANNOT_
     return {c: resolve_overlaps(drop_multimer_hits(pd.DataFrame(r, columns=MON_COLS))) for c, r in out.items()}
 
 
+def _union(s: np.ndarray, e: np.ndarray):
+    """Merged union of intervals sorted by start: (starts, ends, bp before each interval)."""
+    if not len(s):
+        return s, e, np.zeros(1, np.int64)
+    run = np.maximum.accumulate(e)
+    first = np.concatenate([[True], s[1:] > run[:-1]])
+    us = s[first]
+    ue = np.maximum.reduceat(e, np.flatnonzero(first))
+    return us, ue, np.concatenate([[0], np.cumsum(ue - us)])
+
+
+def _covered_below(x: np.ndarray, us, ue, cum) -> np.ndarray:
+    """bp of the union below each position x."""
+    k = np.searchsorted(us, x, side="left")
+    over = np.where(k > 0, np.maximum(ue[np.maximum(k - 1, 0)] - x, 0), 0)
+    return cum[k] - over
+
+
 def drop_multimer_hits(df: pd.DataFrame, ratio: float = MULTIMER_RATIO, min_cov: float = MULTIMER_MIN_COV) -> pd.DataFrame:
     """Describe satellites by their shortest repeat unit: drop a hit when hits of families whose model is
     >= ratio x shorter cover >= min_cov of it. Composite or non-integer multimer families (CentBd x7 + spacer,
-    CentO x2.3) otherwise outscore the monomer hits on the monomer arrays, because bitscore grows with length."""
+    CentO x2.3) otherwise outscore the monomer hits on the monomer arrays, because bitscore grows with length.
+    Vectorised: per distinct long-model length, the union of the shorter-model hits is built once and each hit's
+    coverage read from prefix sums (Avena C genomes: tens of millions of hits)."""
     if df.empty:
         return df
     df = df.sort_values(["start", "end"]).reset_index(drop=True)
     s, e, m = df.start.to_numpy(), df.end.to_numpy(), df.model_len.to_numpy()
-    maxlen = int((e - s).max())
     keep = np.ones(len(df), bool)
-    for i in np.where(m >= ratio * m.min())[0]:          # only hits of long models can be multimers
-        lo, hi = np.searchsorted(s, s[i] - maxlen), np.searchsorted(s, e[i])
-        iv = [(max(s[j], s[i]), min(e[j], e[i])) for j in range(lo, hi)
-              if j != i and m[j] * ratio <= m[i] and e[j] > s[i]]
-        if iv and union_bp(iv) >= min_cov * (e[i] - s[i]):
-            keep[i] = False
+    cand = m >= ratio * m.min()                          # only hits of long models can be multimers
+    for t in np.unique(m[cand]):
+        short = m * ratio <= t
+        if not short.any():
+            continue
+        us, ue, cum = _union(s[short], e[short])
+        idx = np.flatnonzero(cand & (m == t))
+        cov = _covered_below(e[idx], us, ue, cum) - _covered_below(s[idx], us, ue, cum)
+        keep[idx[(cov > 0) & (cov >= min_cov * (e[idx] - s[idx]))]] = False
     return df[keep].reset_index(drop=True)
 
 
