@@ -113,7 +113,7 @@ def finalize(chrom: str, L: int, call, fa, genes_c, chrom_density, p, borrowed: 
     if te_flag and te_decisive:
         if te_flag == "te_discordant":
             conf = LOWER[conf]
-        elif RANK[conf] < RANK["medium"]:
+        elif te_flag == "te_concordant" and RANK[conf] < RANK["medium"]:
             conf = "medium"                  # two independent lines agree: at least as sure as the core alone
     if capped and call["evidence"] != "retrotransposon":
         flags.append("no_dominant_satellite")
@@ -131,7 +131,9 @@ def call_regions(genome, arrays, primary: set, genes, trf_rows, tmpdir, threads:
     or long-unit fallback, and the long-unit scan covers call flanks only.
     te: (clade, {chrom: significant core}, decisive) of the centromere-marking LTR clade, or None. A call that
     agrees with its chromosome's core is te_concordant; one that does not is te_discordant, except a long-unit call,
-    which the core replaces; a chromosome without a call takes the core. Decisive evidence (CRM) sets confidence;
+    which the core replaces, and, with decisive evidence, a satellite call, which the core also replaces
+    (satellite_away_from_core; Ae. geniculata 2U/7M: CENH3 on the CRM core, not on the distant array); a chromosome
+    without a call takes the core. Decisive evidence (CRM) sets confidence;
     other clades only flag. Without satellite calls the long-unit scan covers the core and its flanks instead of the
     whole chromosome."""
     clade, cores, decisive = te if te else (None, {}, False)
@@ -159,9 +161,11 @@ def call_regions(genome, arrays, primary: set, genes, trf_rows, tmpdir, threads:
             if core:
                 if call and agrees(call["cen_start"], call["cen_end"], core):
                     te_flag = "te_concordant"
-                elif call and call["evidence"] != "long_unit_tandem":
+                elif call and call["evidence"] != "long_unit_tandem" and (not decisive or borrowed):
                     te_flag = "te_discordant"
                 elif not borrowed:
+                    if call and call["evidence"] in ("satellite", "weak_satellite"):
+                        te_flag = "satellite_away_from_core"     # decisive core outranks a distant satellite array
                     call = te_call(core)
             rows[c] = finalize(c, L, call, fa, gc, (len(gc) / L) if gc is not None else None, p, borrowed,
                                te_flag, capped, decisive)

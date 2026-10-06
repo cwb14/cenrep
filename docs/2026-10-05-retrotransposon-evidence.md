@@ -49,7 +49,10 @@ Without the file, cenrep is a satellite-only tool and the honesty rule below app
 6. **Calls.**
    - A satellite or long-unit call that agrees gets flag `te_concordant`. With decisive evidence it is raised to at
      least `medium`: two independent lines agree.
-   - One that disagrees gets `te_discordant`. With decisive evidence it loses one confidence level.
+   - One that disagrees gets `te_discordant` and, if the evidence is not decisive, keeps its position.
+     With decisive evidence (CRM) the core replaces it (flag `satellite_away_from_core`; v0.7.0). CENH3 ChIP on
+     *Ae. geniculata* (same assembly) puts the centromere on the CRM core, not on the distant array: 2U 30 Mb
+     away, 7M 268 Mb away. Validated satellite genomes keep every call except *O. officinalis* C08.
    - A chromosome with no call, or with a disagreeing long-unit call, gets the core as its centromere: evidence
      `retrotransposon`, confidence `medium` (decisive) or `low`.
 7. **Honesty rule without TE input.** If no family is dominant (strong, and its kind is the largest cluster on the
@@ -83,3 +86,10 @@ classify (dominant column) and centromeres (rules 1–7) change → STAGE_VERSIO
 | *Brachypodium* 4 genomes | CRM / Tekay | unchanged |
 | *Mimulus* 4 genomes | CRM / Angela | unchanged |
 | *Aegilops ventricosa* 4 genomes | CRM | interstitial families rejected; the 553-bp CentT550-like satellite is centromeric on 5–6/7 per genome |
+
+## CENH3 test (Ae. geniculata, Yunusbaev 2026 ChIP-seq on the same assembly)
+- CRM core alone: overlaps the CENH3 peak on 14/14 chromosomes.
+- v0.6.2 calls: 8/14 overlap. v0.7.0 rule (decisive core replaces a disagreeing satellite call): 10/14 overlap; the other 4
+  are 2.0-10.9 Mb off, satellite arrays inside wide (8-19 Mb) CRM cores that count as agreeing.
+- Rejected alternative: "midpoint of either interval inside the other" as the agreement test gives 13/14 here, but
+  overrides validated CENH3-bound satellite calls (CentO-C 4/8 in O. minuta C, CentBs, Cent728, CentO).

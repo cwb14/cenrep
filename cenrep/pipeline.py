@@ -28,8 +28,9 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.3 = inputs: bgzip *.fa.gz genomes (results unchanged: no stage version bump).
 # 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
 # 0.6.0 = classify: dominant column; centromeres: retrotransposon evidence (tes/), honesty cap without it.
+# 0.7.0 = centromeres: with decisive (CRM) evidence a satellite call away from the core is replaced by the core.
 STAGE_VERSION = {"trf": "0.3.0", "families": "0.4.4", "annotate": "0.4.0", "classify": "0.6.0",
-                 "centromeres": "0.6.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
+                 "centromeres": "0.7.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {
     "trf": ["trf_chunk", "trf_overlap"],
