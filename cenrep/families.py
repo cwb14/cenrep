@@ -79,9 +79,10 @@ def blast_pairs(queries: dict, subjects: dict, workdir: Path, threads: int) -> d
     write_fasta(q, queries.items())
     write_fasta(s, ((k, v + v) for k, v in subjects.items()))
     run(["makeblastdb", "-in", s, "-dbtype", "nucl", "-out", db])
+    # -mt_mode 1 splits work by query: identical hits, but all threads stay busy on many-query searches
     run(["blastn", "-task", "blastn", "-query", q, "-db", db, "-word_size", 11, "-evalue", "1e-5",
          "-dust", "no", "-soft_masking", "false", "-max_target_seqs", 100000,
-         "-num_threads", threads, "-outfmt", BLAST_FMT, "-out", out])
+         "-num_threads", threads, "-mt_mode", 1, "-outfmt", BLAST_FMT, "-out", out])
     pairs = {}
     with open(out) as f:
         for line in f:
