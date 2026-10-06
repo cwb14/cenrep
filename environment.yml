@@ -1,4 +1,4 @@
-# cenrep runs in the existing mamba env `synLTR`; this file only records what it needs.
+# mamba env create -f environment.yml && mamba activate cenrep && pip install .
 name: cenrep
 channels: [conda-forge, bioconda]
 dependencies:
