@@ -104,8 +104,10 @@ def _chunks(chroms: dict, size: int, overlap: int):
 def search_genome(hmms, genome, threads: int, evalue: float, chunk: int = ANNOT_CHUNK, overlap: int = 10_000,
                   ref_len: int = 0, gap_factor: float = 2.0) -> dict:
     """{chrom: overlap-resolved monomer hits}. pyhmmer's nhmmer parallelises over query models only, so a few
-    long models would leave most threads idle; instead every (chunk x all models) job runs on a thread pool
-    (pyhmmer releases the GIL). Chunk E-values are rescaled by chromosome/chunk length, so the cutoff equals
+    long models would leave most threads idle; instead every (chunk x model) job runs on a thread pool (pyhmmer
+    releases the GIL). One job per model, not per chunk: a satellite-dense 2-Mb chunk searched with all ~40 models
+    took > 40 min on one thread while the other 24 idled (Arachis); hits and E-values are the same, since each
+    model's search is independent. Chunk E-values are rescaled by chromosome/chunk length, so the cutoff equals
     that of one whole-chromosome search. overlap must exceed the longest model; duplicate and edge-truncated
     hits in overlaps are removed by resolve_overlaps. Sequences shorter than ref_len are scaled as if ref_len long,
     so short contigs get the cutoff of a chromosome instead of a looser one. Hits are kept if significant alone or
@@ -116,17 +118,20 @@ def search_genome(hmms, genome, threads: int, evalue: float, chunk: int = ANNOT_
         local = threading.local()
 
         def work(job):
-            c, s, e = job
+            c, s, e, h = job
             if not hasattr(local, "fa"):
-                local.fa = pysam.FastaFile(str(genome.fasta))
+                local.fa, local.key = pysam.FastaFile(str(genome.fasta)), None
+            if local.key != (c, s, e):                    # the thread's last chunk is reused when it comes again
+                local.blk = DigitalSequenceBlock(ABC, [TextSequence(name=c, sequence=local.fa.fetch(c, s, e).upper())
+                                                       .digitize(ABC)])
+                local.key = (c, s, e)
             scale = max(genome.chroms[c], ref_len) / (e - s)
-            blk = DigitalSequenceBlock(ABC, [TextSequence(name=c, sequence=local.fa.fetch(c, s, e).upper())
-                                             .digitize(ABC)])
-            return c, _rows(pyhmmer.hmmer.nhmmer(hmms, blk, cpus=1, E=NHMMER_REPORT_E), mlen, c, s, scale)
+            return c, _rows(pyhmmer.hmmer.nhmmer([h], local.blk, cpus=1, E=NHMMER_REPORT_E), mlen, c, s, scale)
 
         overlap = max(overlap, 2 * max(mlen.values()))
+        jobs = ((c, s, e, h) for c, s, e in _chunks(genome.chroms, chunk, overlap) for h in hmms)
         with ThreadPoolExecutor(max(1, threads)) as ex:
-            for c, rows in ex.map(work, _chunks(genome.chroms, chunk, overlap)):
+            for c, rows in ex.map(work, jobs):
                 out[c].extend(rows)
     return {c: resolve_overlaps(drop_multimer_hits(significant(r, max(genome.chroms[c], ref_len), evalue, gap_factor),
                                                    evalue=evalue))

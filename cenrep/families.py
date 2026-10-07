@@ -433,13 +433,15 @@ def build_hmm(fam_id: str, rep_seq: str, intervals, fastas, workdir: Path, threa
     if len(s1) < p.min_hmm_seqs:
         log.warning(f"families: {fam_id}: only {len(s1)} monomers sampled; single-sequence HMM")
         return h, c0, "single", len(s1)
-    c1 = frame_rotation(trim_overhang(msa_consensus(mafft(s1, workdir, threads)), workdir / "trim1", threads), refs,
+    rows1 = mafft(s1, workdir, threads)
+    c1 = frame_rotation(trim_overhang(msa_consensus(rows1), workdir / "trim1", threads), refs,
                         workdir / "frame1", threads, p.superfam_ident)
     h = single_hmm(fam_id, c1)
     s2 = sample_monomers(h, intervals, fastas, p, threads, rng)
-    if len(s2) < p.min_hmm_seqs:
-        log.warning(f"families: {fam_id}: only {len(s2)} monomers in pass 2; single-sequence HMM")
-        return h, c1, "single", len(s2)
+    if len(s2) < p.min_hmm_seqs:                     # a refinement never replaces its model with a worse one:
+        log.warning(f"families: {fam_id}: only {len(s2)} monomers in pass 2; profile from pass 1")   # (Arachis:
+        h = msa_hmm(fam_id, rows1)                   # pass-1 consensus collapsed to 20 bp, pass 2 found nothing)
+        return h, h.consensus.upper(), "profile", len(s1)
     h = msa_hmm(fam_id, mafft(s2, workdir, threads))
     return h, h.consensus.upper(), "profile", len(s2)
 

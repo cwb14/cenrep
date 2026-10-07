@@ -243,3 +243,18 @@ def test_base_unit_keeps_the_monomer_when_only_multimers_span_their_period(tmp_p
                   ("s2", "G", "c1", 1000 + 179 * 5, 1000 + 179 * 25, 179, unit[:170])])  # truncated monomer
     base, seq = base_unit(mem, {"G": fa})
     assert base.seed_id == "s2" and seq == unit
+
+
+@pytest.mark.skipif(not have("blastn", "mafft"), reason="tools missing")
+def test_failed_refinement_keeps_the_pass1_profile(tmp_path, test_params, monkeypatch):
+    """Arachis fam018: pass 1 sampled enough monomers, its consensus collapsed (20 bp) and pass 2 found none; the
+    family then got a useless single-sequence model. A failed refinement now keeps the pass-1 profile."""
+    import random
+    import cenrep.families as F
+    rng = np.random.default_rng(3)
+    unit = rseq(rng, 120)
+    copies = [mutate(rng, unit, 0.05) for _ in range(30)]
+    calls = iter([copies, []])
+    monkeypatch.setattr(F, "sample_monomers", lambda *a, **k: next(calls))
+    hmm, cons, mode, n = F.build_hmm("f", unit, [], {}, tmp_path, 2, test_params, random.Random(1))
+    assert mode == "profile" and n == 30 and abs(hmm.M - 120) <= 3
