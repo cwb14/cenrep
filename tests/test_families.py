@@ -258,3 +258,20 @@ def test_failed_refinement_keeps_the_pass1_profile(tmp_path, test_params, monkey
     monkeypatch.setattr(F, "sample_monomers", lambda *a, **k: next(calls))
     hmm, cons, mode, n = F.build_hmm("f", unit, [], {}, tmp_path, 2, test_params, random.Random(1))
     assert mode == "profile" and n == 30 and abs(hmm.M - 120) <= 3
+
+
+def test_microsatellite_seeds_do_not_found_families(test_params):
+    """Arachis: TRF reported the telomere-like 10-bp repeat AGAAAACCCT at period 40 and 30; it founded 'satellite'
+    families that were called centromeric. A consensus repeating itself below min_period is a microsatellite."""
+    import pandas as pd
+    from cenrep.families import internal_period, select_seeds
+    rng = np.random.default_rng(5)
+    micro = "AGAAAACCCT" * 4
+    real = rseq(rng, 40)
+    assert internal_period(micro, 29) == 10 and internal_period(real, 29) is None
+    assert internal_period(rseq(rng, 178), 29) is None
+    trf = pd.DataFrame({"chrom": ["c", "c"], "start": [0, 10_000], "end": [5_000, 15_000], "period": [40, 40],
+                        "copies": [125.0, 125.0], "consensus_size": [40, 40], "pct_match": [95, 95], "pct_indel": [0, 0],
+                        "score": [5000, 5000], "entropy": [1.9, 1.9], "consensus": [micro, real]})
+    s = select_seeds({"g": trf}, test_params)
+    assert s.consensus.tolist() == [real]

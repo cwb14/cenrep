@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cenrep"
-version = "0.8.1"
+version = "0.8.2"
 description = "Centromeric satellite, HOR and tandem-repeat annotation, de novo, for one or many genomes"
 requires-python = ">=3.10"
 dependencies = ["numpy", "pandas", "pysam", "pyhmmer>=0.12", "matplotlib"]

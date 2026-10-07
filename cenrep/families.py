@@ -21,11 +21,25 @@ FAM_COLS = ["fam_id", "rep_seed", "base_seed", "consensus_len", "n_seeds", "max_
             "genome_spans", "hmm_mode", "n_hmm_seqs", "superfamily", "rdna", "chain_group"]
 
 
+def internal_period(seq: str, pmax: int, ident: float = FAMILY_IDENT):
+    """Shortest period p <= pmax at which seq matches itself shifted by p (circular identity >= ident), else None.
+    TRF also reports a microsatellite at multiples of its unit (Arachis: AGAAAACCCT, a telomere-like 10-bp repeat, as
+    30- and 40-bp seeds); its true unit is the internal period."""
+    a = np.frombuffer(seq.upper().encode(), np.uint8)
+    for q in range(1, min(pmax, len(a) // 2) + 1):
+        if (a == np.roll(a, -q)).mean() >= ident:
+            return q
+    return None
+
+
 def select_seeds(trf: dict, p) -> pd.DataFrame:
+    """TRF arrays that found families: period within [min_period, max_period], span >= min_seed_span, and not a
+    microsatellite in disguise (a consensus repeating itself at a period < min_period)."""
     parts = []
     for g, df in trf.items():
         d = df[(df.period >= p.min_period) & (df.period <= p.max_period)
                & ((df.end - df.start) >= p.min_seed_span)].copy()
+        d = d[[internal_period(c, p.min_period - 1) is None for c in d.consensus.astype(str)]]
         d["genome"] = g
         parts.append(d)
     s = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
