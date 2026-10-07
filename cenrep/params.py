@@ -33,6 +33,8 @@ MULTIMER_MIN_COV = 0.5         # drop a multimer hit when shorter-unit hits cove
 OVERLAP_MAX_COV = 0.2          # accept a hit only if <= 20% of it is already covered by better hits
 OVERHANG_MIN_BP = 20           # terminal redundancy shorter than this is a chance match, not a run-through
 MSA_MAX_GAP = 0.5              # consensus keeps alignment columns occupied in the majority of sequences
+NHMMER_REPORT_E = 10.0         # hits kept up to HMMER's default reporting E 10 per search (pyhmmer returns weaker ones
+                               # too); significance is then decided per hit or per run of copies (annotate.run_significant)
 RDNA_TAG_EVALUE = 1e-5         # cmsearch E for an rRNA gene inside a family consensus dimer
 RDNA_FLANK_EVALUE = 1e-10      # cmsearch --hmmonly E for 45S genes in array flanks (stricter: long flank queries)
 

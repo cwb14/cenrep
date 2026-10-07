@@ -18,6 +18,9 @@ namespace), but it works on any set of chromosome-level genomes, or on a single 
    - Each family gets a profile HMM built from sampled copies, founded on one whole monomer.
    - rDNA-derived repeats are tagged with Rfam models; they are never centromeric.
 3. **Annotation.** nhmmer finds every monomer of every family; neighbouring monomers form arrays.
+   - A copy of a short unit (< ~60 bp) can never be significant on its own, but a run of whole copies is: the run's
+     E-value is the product of its copies' E-values times the chance that each next copy falls within the array gap.
+   - Run-only copies never override a hit that is significant on its own.
 4. **Classification, per genome.** A family is a centromere candidate when, on most chromosomes:
    - its main cluster holds most of its sequence;
    - it is not mainly near chromosome ends;
@@ -44,6 +47,9 @@ LTR retrotransposons with their clade labels, cenrep finds the clade that piles 
   (`evidence=retrotransposon`).
 - **Moving distant satellite calls.** With CRM as the marker, a satellite call far from the core is replaced by
   the core.
+- **CRM marks the centromere neighbourhood, not always the CENH3 domain itself.** In tobacco, CENH3 binds Tekay and
+  avoids CRM, yet CRM clusters at the centromeres: calls are within 5 Mb of independent centromere positions
+  on 44/48 chromosomes. In Solanaceae with CRM outside centromeres (eggplant), a CRM-decisive call would be wrong.
 - **Other clades only flag.** When the marker is another clade, it flags agreement (`te_concordant`) or
   disagreement (`te_discordant`) but changes nothing.
 
@@ -113,7 +119,8 @@ Flags name each reason: `low_satellite`, `competing_cluster`, `near_end`, `diffu
 
 ## Limitations
 
-- Short-unit centromeric satellites (< 30 bp; *Drosophila*) and units > 30 kb are outside the search.
+- Units < 30 bp (*Drosophila*) and > 30 kb are outside the search. Units of 30–60 bp are found as runs of copies.
+  Arrays of a composite unit (two different short units in tandem, e.g. 48 + 39 bp) are described by the composite.
 - Non-tandem centromeres are reported as `none` (no retrotransposon input) or by their retrotransposon core.
 - Without retrotransposon input, a dominant but non-centromeric satellite is called centromeric (oat: the 335–360-bp
   family on every chromosome). The `no_dominant_satellite` cap catches only genomes where no family dominates; give

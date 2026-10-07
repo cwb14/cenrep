@@ -8,8 +8,9 @@ import pyhmmer
 import pysam
 from pyhmmer.easel import Alphabet, DigitalSequenceBlock, TextMSA, TextSequence
 
+from .annotate import run_significant
 from .params import (BLAST_BATCH, FAMILY_IDENT, FULL_MONOMER_COV, FULL_PERIOD_TOL, LEN_TOL, MSA_MAX_GAP,
-                     OVERHANG_MIN_BP, RDNA_FLANK_EVALUE, RDNA_TAG_EVALUE, RELATED_LEN_TOL)
+                     NHMMER_REPORT_E, OVERHANG_MIN_BP, RDNA_FLANK_EVALUE, RDNA_TAG_EVALUE, RELATED_LEN_TOL)
 from .util import (CenrepError, canonical_rotation, log, merge_intervals, parse_fasta_text, revcomp, run, union_bp,
                    write_fasta)
 
@@ -387,8 +388,8 @@ def pad_hit(lo: int, hi: int, strand: str, hmm_from: int, hmm_to: int, M: int, s
 
 
 def sample_monomers(hmm, intervals: list, fastas: dict, p, threads: int, rng: random.Random) -> list:
-    """nhmmer hmm vs the intervals; up to p.hmm_sample monomers with >= 90% model coverage,
-    in consensus orientation."""
+    """nhmmer hmm vs the intervals; up to p.hmm_sample monomers with >= 90% model coverage, significant alone or in
+    a run of copies (annotate.run_significant; E-values are for all intervals together), in consensus orientation."""
     raw = []
     for g in dict.fromkeys(i[0] for i in intervals):
         with pysam.FastaFile(str(fastas[g])) as fa:
@@ -397,19 +398,26 @@ def sample_monomers(hmm, intervals: list, fastas: dict, p, threads: int, rng: ra
         return []
     blk = DigitalSequenceBlock(ABC, [TextSequence(name=f"i{i}", sequence=x).digitize(ABC)
                                      for i, x in enumerate(raw)])
-    out = []
-    for hits in pyhmmer.hmmer.nhmmer([hmm], blk, cpus=threads, E=p.nhmmer_evalue):
+    rows = []
+    for hits in pyhmmer.hmmer.nhmmer([hmm], blk, cpus=threads, E=NHMMER_REPORT_E):
         for h in hits:
-            if h.evalue > p.nhmmer_evalue:
+            if h.evalue > NHMMER_REPORT_E:
                 continue
             a = h.best_domain.alignment
-            if a.hmm_to - a.hmm_from + 1 < FULL_MONOMER_COV * hmm.M:
-                continue
-            src = raw[int(h.name[1:])]
-            lo, hi = pad_hit(*sorted((a.target_from, a.target_to)), h.best_domain.strand,
-                             a.hmm_from, a.hmm_to, hmm.M, len(src))
-            sub = src[lo - 1:hi]
-            out.append(sub if h.best_domain.strand == "+" else revcomp(sub))
+            lo, hi = sorted((a.target_from, a.target_to))
+            rows.append((int(h.name[1:]), lo, hi, h.best_domain.strand, float(h.evalue), a.hmm_from, a.hmm_to))
+    hits = pd.DataFrame(rows, columns=["seq", "start", "end", "strand", "evalue", "hmm_from", "hmm_to"])
+    hits = hits.assign(family=hmm.name, model_len=hmm.M)
+    total = sum(len(x) for x in raw)
+    ok = np.zeros(len(hits), bool)
+    for _, d in hits.groupby("seq"):
+        ok[d.index.to_numpy()] = run_significant(d, total, p.nhmmer_evalue, p.array_gap_factor)
+    out = []
+    for r in hits[ok & (hits.hmm_to - hits.hmm_from + 1 >= FULL_MONOMER_COV * hmm.M)].itertuples(index=False):
+        src = raw[r.seq]
+        lo, hi = pad_hit(r.start, r.end, r.strand, r.hmm_from, r.hmm_to, hmm.M, len(src))
+        sub = src[lo - 1:hi]
+        out.append(sub if r.strand == "+" else revcomp(sub))
     rng.shuffle(out)
     return out[:p.hmm_sample]
 
@@ -463,14 +471,13 @@ def build_families(trf: dict, genomes: list, workdir: Path, threads: int, p) -> 
         log.info(f"families: {len(seeds)} seeds -> {len(set(assign.values()))} clusters; "
                  f"{len(top)} carried forward" + (f"; {len(dropped)} more >= min_fam_span dropped by max_families "
                                                   f"(largest {dropped[0][0]} bp)" if dropped else ""))
-        rng = random.Random(1)
         refs = {}                                        # frame references: final consensus of earlier families
         for i, (mx, rep) in enumerate(top, 1):
             fid = f"fam{i:03d}"
             mem = seeds[seeds.rep == rep]
             base, unit = base_unit(mem, fastas)
-            hmm, cons, mode, n = build_hmm(fid, unit, seed_intervals(mem, p), fastas,
-                                           workdir / fid, threads, p, rng, refs)
+            hmm, cons, mode, n = build_hmm(fid, unit, seed_intervals(mem, p), fastas,     # per-family seed: a model
+                                           workdir / fid, threads, p, random.Random(i), refs)   # never depends on others
             refs[fid] = cons
             seeds.loc[mem.index, "fam_id"] = fid
             fams.append(dict(fam_id=fid, rep_seed=rep, base_seed=base.seed_id, consensus_len=hmm.M,

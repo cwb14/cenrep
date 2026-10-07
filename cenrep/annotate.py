@@ -8,7 +8,7 @@ import pyhmmer
 import pysam
 from pyhmmer.easel import Alphabet, DigitalSequenceBlock, TextSequence
 
-from .params import ANNOT_CHUNK, MULTIMER_MIN_COV, MULTIMER_RATIO, OVERLAP_MAX_COV
+from .params import ANNOT_CHUNK, FULL_MONOMER_COV, MULTIMER_MIN_COV, MULTIMER_RATIO, NHMMER_REPORT_E, OVERLAP_MAX_COV
 from .util import log, union_bp
 
 ABC = Alphabet.dna()
@@ -24,23 +24,70 @@ def _identity(a) -> float:
     return float((h == t).mean())
 
 
-def search_chrom(hmms, chrom: str, seq: str, threads: int, evalue: float) -> list:
-    if not hmms:
-        return []
-    blk = DigitalSequenceBlock(ABC, [TextSequence(name=chrom, sequence=seq.upper()).digitize(ABC)])
-    mlen = {h.name: h.M for h in hmms}
+def run_significant(df: pd.DataFrame, L: int, evalue: float, gap_factor: float) -> np.ndarray:
+    """Which hits are significant alone or as part of a run of whole copies. A copy of a short unit cannot be
+    significant alone (a 40-bp model scores <= ~20 bits; E 1e-5 on a 500-Mb chromosome needs ~47), but a tandem run
+    of copies is no chance event: after one hit, a random hit starts within the array gap W = gap_factor x unit + 1
+    with probability ~W x E_i / L. A run of r whole copies (>= FULL_MONOMER_COV of the model; same family and strand;
+    gaps <= gap_factor x unit, as chain_arrays joins monomers) therefore has E = prod(E_i) x (W / L)^(r - 1).
+    Fragments count only on their own E: weak partial hits of long models cluster in repeats (not independent), and
+    an array is made of whole copies. df: one sequence of length L, E-values for that length (evalue), hmm_from,
+    hmm_to, unit in model_len. Returns a mask aligned to df: own E or run E <= evalue."""
+    if df.empty:
+        return np.zeros(0, bool)
+    alone = (np.log10(np.maximum(df.evalue.to_numpy(), 1e-300)) <= np.log10(evalue))
+    whole = (df.hmm_to - df.hmm_from + 1).to_numpy() >= FULL_MONOMER_COV * df.model_len.to_numpy()
+    out = alone.copy()
+    if not whole.any():
+        return out
+    d = df.loc[whole, ["family", "strand", "start", "end", "evalue", "model_len"]].reset_index(drop=True)
+    d = d.assign(_i=np.flatnonzero(whole)).sort_values(["family", "strand", "start"], kind="stable")
+    s, e = d.start.to_numpy(), d.end.to_numpy()
+    unit = d.model_len.to_numpy().astype(float)
+    key = (d.family.astype(str) + d.strand.astype(str)).to_numpy()
+    same = np.concatenate([[False], key[1:] == key[:-1]])
+    reach = pd.Series(e).groupby(np.cumsum(~same)).cummax().to_numpy()         # furthest end so far in each key
+    brk = ~same | np.concatenate([[True], s[1:] - reach[:-1] > gap_factor * unit[1:]])
+    run = np.cumsum(brk)
+    loge = np.log10(np.maximum(d.evalue.to_numpy(), 1e-300))
+    g = pd.DataFrame({"run": run, "loge": loge, "w": np.log10((gap_factor * unit + 1) / L)})
+    tot = g.groupby("run").agg(s=("loge", "sum"), n=("loge", "size"), w=("w", "first"))
+    run_e = (tot.s + (tot.n - 1) * tot.w).to_numpy()[run - 1]
+    out[d._i.to_numpy()] |= run_e <= np.log10(evalue)
+    return out
+
+
+def _rows(hits, mlen: dict, chrom: str, offset: int, scale: float) -> list:
+    """MON_COLS rows of the hits HMMER would report (E <= NHMMER_REPORT_E per search; pyhmmer's TopHits also holds
+    weaker ones); E-values scaled to the chromosome."""
     rows = []
-    for hits in pyhmmer.hmmer.nhmmer(hmms, blk, cpus=threads, E=evalue):
-        fam = hits.query.name
-        for h in hits:
-            if h.evalue > evalue:
+    for hs in hits:
+        fam = hs.query.name
+        for h in hs:
+            if h.evalue > NHMMER_REPORT_E:
                 continue
             d = h.best_domain
             a = d.alignment
             lo, hi = sorted((a.target_from, a.target_to))
-            rows.append((chrom, lo - 1, hi, d.strand, fam, float(h.score), float(h.evalue),
+            rows.append((chrom, offset + lo - 1, offset + hi, d.strand, fam, float(h.score), float(h.evalue * scale),
                          a.hmm_from, a.hmm_to, mlen[fam], _identity(a)))
     return rows
+
+
+def significant(rows: list, L: int, evalue: float, gap_factor: float) -> pd.DataFrame:
+    """Hits of one sequence (E-values for length L) that are significant alone or in a run; chunk-overlap duplicates
+    are dropped first so that no copy counts twice."""
+    df = pd.DataFrame(rows, columns=MON_COLS).drop_duplicates(["start", "end", "strand", "family"])
+    return df[run_significant(df, L, evalue, gap_factor)].reset_index(drop=True)
+
+
+def search_chrom(hmms, chrom: str, seq: str, threads: int, evalue: float, gap_factor: float = 2.0) -> list:
+    if not hmms:
+        return []
+    blk = DigitalSequenceBlock(ABC, [TextSequence(name=chrom, sequence=seq.upper()).digitize(ABC)])
+    rows = _rows(pyhmmer.hmmer.nhmmer(hmms, blk, cpus=threads, E=NHMMER_REPORT_E), {h.name: h.M for h in hmms},
+                 chrom, 0, 1.0)
+    return list(significant(rows, len(seq), evalue, gap_factor).itertuples(index=False, name=None))
 
 
 def _chunks(chroms: dict, size: int, overlap: int):
@@ -55,13 +102,14 @@ def _chunks(chroms: dict, size: int, overlap: int):
 
 
 def search_genome(hmms, genome, threads: int, evalue: float, chunk: int = ANNOT_CHUNK, overlap: int = 10_000,
-                  ref_len: int = 0) -> dict:
+                  ref_len: int = 0, gap_factor: float = 2.0) -> dict:
     """{chrom: overlap-resolved monomer hits}. pyhmmer's nhmmer parallelises over query models only, so a few
     long models would leave most threads idle; instead every (chunk x all models) job runs on a thread pool
     (pyhmmer releases the GIL). Chunk E-values are rescaled by chromosome/chunk length, so the cutoff equals
     that of one whole-chromosome search. overlap must exceed the longest model; duplicate and edge-truncated
     hits in overlaps are removed by resolve_overlaps. Sequences shorter than ref_len are scaled as if ref_len long,
-    so short contigs get the cutoff of a chromosome instead of a looser one."""
+    so short contigs get the cutoff of a chromosome instead of a looser one. Hits are kept if significant alone or
+    as part of a run of copies (run_significant), so short units are found too."""
     out = {c: [] for c in genome.chroms}
     if hmms:
         mlen = {h.name: h.M for h in hmms}
@@ -74,24 +122,15 @@ def search_genome(hmms, genome, threads: int, evalue: float, chunk: int = ANNOT_
             scale = max(genome.chroms[c], ref_len) / (e - s)
             blk = DigitalSequenceBlock(ABC, [TextSequence(name=c, sequence=local.fa.fetch(c, s, e).upper())
                                              .digitize(ABC)])
-            rows = []
-            for hits in pyhmmer.hmmer.nhmmer(hmms, blk, cpus=1, E=evalue):
-                fam = hits.query.name
-                for h in hits:
-                    if h.evalue * scale > evalue:
-                        continue
-                    d = h.best_domain
-                    a = d.alignment
-                    lo, hi = sorted((a.target_from, a.target_to))
-                    rows.append((c, s + lo - 1, s + hi, d.strand, fam, float(h.score), float(h.evalue * scale),
-                                 a.hmm_from, a.hmm_to, mlen[fam], _identity(a)))
-            return c, rows
+            return c, _rows(pyhmmer.hmmer.nhmmer(hmms, blk, cpus=1, E=NHMMER_REPORT_E), mlen, c, s, scale)
 
         overlap = max(overlap, 2 * max(mlen.values()))
         with ThreadPoolExecutor(max(1, threads)) as ex:
             for c, rows in ex.map(work, _chunks(genome.chroms, chunk, overlap)):
                 out[c].extend(rows)
-    return {c: resolve_overlaps(drop_multimer_hits(pd.DataFrame(r, columns=MON_COLS))) for c, r in out.items()}
+    return {c: resolve_overlaps(drop_multimer_hits(significant(r, max(genome.chroms[c], ref_len), evalue, gap_factor),
+                                                   evalue=evalue))
+            for c, r in out.items()}
 
 
 def _union(s: np.ndarray, e: np.ndarray):
@@ -112,20 +151,25 @@ def _covered_below(x: np.ndarray, us, ue, cum) -> np.ndarray:
     return cum[k] - over
 
 
-def drop_multimer_hits(df: pd.DataFrame, ratio: float = MULTIMER_RATIO, min_cov: float = MULTIMER_MIN_COV) -> pd.DataFrame:
+def drop_multimer_hits(df: pd.DataFrame, ratio: float = MULTIMER_RATIO, min_cov: float = MULTIMER_MIN_COV,
+                       evalue: float = None) -> pd.DataFrame:
     """Describe satellites by their shortest repeat unit: drop a hit when hits of families whose model is
     >= ratio x shorter cover >= min_cov of it. Composite or non-integer multimer families (CentBd x7 + spacer,
     CentO x2.3) otherwise outscore the monomer hits on the monomer arrays, because bitscore grows with length.
+    With evalue, only shorter hits significant on their own count: copies significant only as a run
+    (run_significant) fill sequence nothing else explains but never erase a hit that is significant alone (Avena:
+    run-only 38-41-bp copies erased 87/130-bp arrays and then lost the overlap contest, leaving sequence unannotated).
     Vectorised: per distinct long-model length, the union of the shorter-model hits is built once and each hit's
     coverage read from prefix sums (Avena C genomes: tens of millions of hits)."""
     if df.empty:
         return df
     df = df.sort_values(["start", "end"]).reset_index(drop=True)
     s, e, m = df.start.to_numpy(), df.end.to_numpy(), df.model_len.to_numpy()
+    strong = np.ones(len(df), bool) if evalue is None else df.evalue.to_numpy() <= evalue
     keep = np.ones(len(df), bool)
     cand = m >= ratio * m.min()                          # only hits of long models can be multimers
     for t in np.unique(m[cand]):
-        short = m * ratio <= t
+        short = (m * ratio <= t) & strong
         if not short.any():
             continue
         us, ue, cum = _union(s[short], e[short])
@@ -186,7 +230,7 @@ def chain_arrays(mon: pd.DataFrame, fam_len: dict, p, groups: dict = None):
 
 
 def annotate_genome(genome, hmms, fam_len: dict, threads: int, p, out_mon, out_arr, groups: dict = None):
-    per = search_genome(hmms, genome, threads, p.nhmmer_evalue, ref_len=p.evalue_ref_len)
+    per = search_genome(hmms, genome, threads, p.nhmmer_evalue, ref_len=p.evalue_ref_len, gap_factor=p.array_gap_factor)
     parts = [per[c] for c in genome.chroms if len(per[c])]
     log.debug(f"annotate: {genome.name}: monomer hits on {len(parts)}/{len(genome.chroms)} sequences")
     mon = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=MON_COLS)

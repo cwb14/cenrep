@@ -29,15 +29,15 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
 # 0.6.0 = classify: dominant column; centromeres: retrotransposon evidence (tes/), honesty cap without it.
 # 0.7.0 = centromeres: with decisive (CRM) evidence a satellite call away from the core is replaced by the core.
-STAGE_VERSION = {"trf": "0.3.0", "families": "0.4.4", "annotate": "0.4.0", "classify": "0.6.0",
+STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.0", "annotate": "0.5.0", "classify": "0.6.0",
                  "centromeres": "0.7.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {
     "trf": ["trf_chunk", "trf_overlap"],
     "families": ["min_period", "max_period", "min_seed_span", "fam_ident", "multi_ident", "superfam_ident",
                  "absorb_ident", "dedup_ident", "chain_ident", "min_fam_span", "max_families", "hmm_sample", "hmm_sample_bp", "min_hmm_seqs",
-                 "nhmmer_evalue"],
-    "annotate": ["array_gap_factor", "min_array_monomers", "evalue_ref_len"],
+                 "nhmmer_evalue", "array_gap_factor"],
+    "annotate": ["min_array_monomers", "evalue_ref_len"],
     "classify": ["chrom_min_bp", "cluster_gap", "min_concentration", "max_subtel_frac", "subtel_min_bp",
                  "subtel_frac_len", "max_gene_ratio", "strong_prevalence", "strong_cluster_bp", "classify_from",
                  "rdna_flank", "rdna_arrays", "rdna_array_frac"],

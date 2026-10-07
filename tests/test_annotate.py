@@ -117,7 +117,9 @@ def test_evalue_ref_len_scales_short_sequences(synth_complex, synth_families):
     b, s = key(base), key(big)
     shared = set(b) & set(s)
     assert shared and all(abs(s[k] / b[k] / 10_000 - 1) < 1e-6 for k in shared if b[k] > 0)
-    assert (big.evalue <= 1e-5).all()
+    from cenrep.annotate import run_significant
+    assert run_significant(big, 3_000_000_000, 1e-5, 2.0).all()      # every hit passes alone or in its run
+    assert len(big) <= len(base)                                     # a stricter cutoff never adds hits
 
 
 def _drop_multimer_hits_reference(df, ratio=1.9, min_cov=0.5):
@@ -154,3 +156,15 @@ def test_drop_multimer_hits_matches_the_per_hit_reference():
         df = pd.DataFrame(rows, columns=MON_COLS)
         a, b = drop_multimer_hits(df), _drop_multimer_hits_reference(df)
         assert a.equals(b), trial
+
+
+def test_run_only_copies_never_drop_a_hit_significant_alone():
+    """Copies significant only as a run fill sequence nothing else explains; they never erase a hit significant alone."""
+    rows = [("c", 0, 87, "+", "f87", 60.0, 1e-20, 1, 87, 87, 0.9),
+            ("c", 0, 40, "+", "f39", 18.0, 1e-2, 1, 39, 39, 0.9),         # two weak copies (significant only as a run)
+            ("c", 42, 82, "+", "f39", 18.0, 1e-2, 1, 39, 39, 0.9)]
+    df = pd.DataFrame(rows, columns=MON_COLS)
+    assert "f87" not in set(drop_multimer_hits(df).family)               # without evalue: all copies count
+    assert "f87" in set(drop_multimer_hits(df, evalue=1e-5).family)      # weak copies cannot override it
+    strong = df.assign(evalue=[1e-20, 1e-7, 1e-7])
+    assert "f87" not in set(drop_multimer_hits(strong, evalue=1e-5).family)
