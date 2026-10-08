@@ -128,6 +128,9 @@ Flags name each reason: `low_satellite`, `competing_cluster`, `near_end`, `diffu
   Holocentric chromosomes have no diagnostic yet.
 - At most 40 families per run, the largest. Satellite-rich genomes (oat, wheat relatives) drop hundreds of small
   families; the centromeric ones tested so far were kept.
+- Solanaceae: short (150–190-bp) satellites are often pericentromeric, while centromeres are kb-unit arrays or
+  satellite-free. CENH3 ChIP on *S. verrucosum* (same assembly) puts calls within 1 Mb on 7/11 chromosomes but
+  2–10 Mb off on 4, some at high confidence.
 - Under-assembled centromeres give short calls. Lengths reflect the assembly.
 - In large grass genomes, calls on small satellite arrays inside wide CRM cores can be offset from CENH3 by a few Mb.
 - Chromosome ends: the end zone is max(1 Mb, 5% of length), which covers chromosomes ≤ 2 Mb entirely (fungi);
