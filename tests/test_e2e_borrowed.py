@@ -55,7 +55,7 @@ def test_borrowed_family_table(borrowed_run):
     assert tgt.index.is_unique
     assert set(tgt.index[tgt.cls == "centromeric"]) == set(src.index[src.cls == "centromeric"]) & set(tgt.index)
     main = tgt[(fam.loc[tgt.index, "consensus_len"] - 150).abs().to_numpy() <= 3].bp.idxmax()
-    assert tgt.loc[main, "cls"] == "centromeric" and not tgt.loc[main, "eligible"]   # own tests would fail
+    assert tgt.loc[main, "cls"] == "centromeric"                                    # borrowed, whatever its own metrics
     assert tgt.loc[main, "reason"].startswith("borrowed from Pa_A") and tgt.loc[main, "strength"] == src.loc[main, "strength"]
     decoy = [f for f in tgt.index if abs(fam.loc[f, "consensus_len"] - 90) <= 3]
     assert decoy and set(tgt.loc[decoy, "cls"]) == {"other"}

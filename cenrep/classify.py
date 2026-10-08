@@ -36,14 +36,18 @@ def make_clusters(iv, gap: int) -> list:
 
 
 def end_zone(L: int, p) -> int:
-    return max(p.subtel_min_bp, int(p.subtel_frac_len * L))
+    """The terminal subtel_frac_len of a chromosome at each end. No absolute floor: a 1-Mb floor made every chromosome
+    <= 2 Mb all end zone (Cryptococcus) and covered a CENH3 centromere 1.0 Mb from a chromosome end (Fragaria x
+    ananassa Chr1D, Type II satellite; Jin 2025)."""
+    return int(p.subtel_frac_len * L)
 
 
 def end_zone_bp(iv, L: int, p) -> int:
+    """bp of iv in the two end zones, counted only when iv reaches both: subtelomeric repeats cap both ends of a
+    chromosome, while a centromere is one locus even next to an end (acrocentric and telocentric chromosomes)."""
     z = end_zone(L, p)
-    if 2 * z >= L:
-        return union_bp(iv)
-    return clipped_bp(iv, 0, z) + clipped_bp(iv, L - z, L)
+    left, right = clipped_bp(iv, 0, z), clipped_bp(iv, L - z, L)
+    return left + right if left and right else 0
 
 
 def interval_gap(a, b) -> int:

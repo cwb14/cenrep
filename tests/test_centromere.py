@@ -28,7 +28,7 @@ def test_finalize_flags_gaps_and_near_end(tmp_path):
     fa = tmp_path / "x.fa"
     fa.write_text(">c\n" + seq + "\n")
     pysam.faidx(str(fa))
-    p = Params(subtel_min_bp=500)
+    p = Params(subtel_frac_len=0.25)
     call = dict(cen_start=100, cen_end=3000, evidence="satellite", main_family="A", main_family_bp=2000,
                 sat_bp=2000, second_cluster_bp=0, cen_families="A")
     with pysam.FastaFile(str(fa)) as h:
@@ -93,7 +93,7 @@ def test_borrowed_calls_need_satellite_evidence(tmp_path, monkeypatch):
     seen = []
     lu = pd.DataFrame([("c3", 80_000, 140_000, 3000, 20.0, 0.95)], columns=LU_COLS)
     monkeypatch.setattr(longunit, "detect", lambda fa, targets, *a: seen.append(targets) or lu)
-    p = Params(subtel_min_bp=10_000)
+    p = Params()
     trf = pd.DataFrame(columns=COLS)
     rows, _ = centromere.call_regions(g, arrays, {"A"}, None, trf, tmp_path / "t1", 1, p)
     assert [rows[c]["evidence"] for c in ("c1", "c2", "c3")] == ["satellite", "weak_satellite", "long_unit_tandem"]
@@ -120,7 +120,7 @@ def test_without_a_dominant_satellite_or_te_evidence_calls_are_capped_low(tmp_pa
     call = dict(cen_start=60_000, cen_end=120_000, evidence="satellite", main_family="A", main_family_bp=60_000,
                 sat_bp=60_000, second_cluster_bp=0, cen_families="A")
     with pysam.FastaFile(str(g.fasta)) as h:
-        p = Params(subtel_min_bp=10_000, low_sat_bp=10_000)
+        p = Params(low_sat_bp=10_000)
         free = finalize("c1", 200_000, call, h, None, None, p)
         capped = finalize("c1", 200_000, call, h, None, None, p, capped=True)
         disc = finalize("c1", 200_000, call, h, None, None, p, te_flag="te_discordant")

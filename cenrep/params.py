@@ -74,7 +74,6 @@ class Params:
     cluster_gap: int = 500_000
     min_concentration: float = 0.5
     max_subtel_frac: float = 0.5
-    subtel_min_bp: int = 1_000_000
     subtel_frac_len: float = 0.05
     max_gene_ratio: float = 0.5
     strong_prevalence: float = 0.5
@@ -131,8 +130,7 @@ REASON = {
     "cluster_gap": "prior: arrays closer than this form one cluster; also the co-centromeric distance (bp)",
     "min_concentration": "the main cluster holds the majority of a chromosome's family bp (median over chromosomes)",
     "max_subtel_frac": "a family with the majority of its bp in end zones is subtelomeric",
-    "subtel_min_bp": "prior: end-zone floor (bp); end zone = max(this, subtel_frac_len x length)",
-    "subtel_frac_len": "end zone as a fraction of chromosome length",
+    "subtel_frac_len": "end zone at each chromosome end, as a fraction of its length (bp counts only where both ends hold it)",
     "max_gene_ratio": "centromeres are gene-poor: main clusters at >= half the genome's gene density are not centromeric",
     "strong_prevalence": "'strong' and dominant families are centromeric on the majority of chromosomes",
     "strong_cluster_bp": "prior: min median main-cluster bp for 'strong' evidence = 5 x S_MIN",

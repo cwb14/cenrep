@@ -22,8 +22,8 @@ def test_chromosome_specific_and_layered_families():
     rows = [arr("A", "c1", 5_000_000, 1000), arr("A", "c2", 5_000_000, 1000),
             arr("B", "c3", 4_000_000, 800), arr("B", "c4", 4_000_000, 800),
             arr("C", "c1", 5_300_000, 200),                                      # layered next to A on c1
-            arr("D", "c1", 100_000, 300), arr("D", "c2", 9_700_000, 300),
-            arr("D", "c3", 50_000, 300), arr("D", "c4", 9_800_000, 300)]         # subtelomeric
+            arr("D", "c1", 100_000, 300), arr("D", "c1", 9_700_000, 300),
+            arr("D", "c3", 50_000, 300), arr("D", "c3", 9_800_000, 300)]         # subtelomeric: both ends
     rows += [arr("S", f"c{1 + i % 4}", 300_000 + (i // 4) * 900_000, 120) for i in range(40)]   # scattered
     info = {"A": dict(superfamily="A", length=180, rdna="."), "B": dict(superfamily="B", length=180, rdna="."),
             "C": dict(superfamily="A", length=175, rdna="."), "D": dict(superfamily="D", length=90, rdna="."),
@@ -123,14 +123,13 @@ def test_widespread_pericentromeric_satellite_gets_no_precedence():
 
 
 def test_borrowed_classification_uses_source_families():
-    """Contig assemblies: per-chromosome tests are meaningless on contigs (a contig < 2 Mb is all end zone),
+    """Contig assemblies: per-chromosome tests are meaningless on contigs (a contig holds only part of a centromere),
     so a target genome takes the union of its sources' centromeric families; its own metrics are reported."""
     from cenrep.classify import borrow_centromeric
     ch = {f"t{i}": 1_000_000 for i in range(1, 4)}
     rows = [arr("A", "t1", 900_000, 500), arr("A", "t2", 0, 500), arr("B", "t3", 100_000, 200),
             arr("D", "t1", 0, 30)]
     fams, mains = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), ch, None, P)
-    assert not fams.set_index("family").loc["A", "eligible"]           # own tests fail: all end zone
     src = {"S1": pd.DataFrame([dict(family="A", cls="centromeric", strength="weak"),
                                dict(family="B", cls="other", strength="."),
                                dict(family="Z", cls="centromeric", strength="strong")]),
@@ -140,7 +139,7 @@ def test_borrowed_classification_uses_source_families():
     assert len(out) == len(fams) and f.index.is_unique and "Z" not in f.index
     assert f.loc["A", "cls"] == "centromeric" and f.loc["A", "strength"] == "strong"
     assert f.loc["A", "defines"] == "t1,t2" and f.loc["A", "reason"].startswith("borrowed from S1+S2")
-    assert "own contig metrics: " in f.loc["A", "reason"] and "subtel_frac" in f.loc["A", "reason"]
+    assert "own contig metrics: " in f.loc["A", "reason"]
     assert f.loc["B", "cls"] == "other" and f.loc["B", "reason"].startswith("not centromeric in S1+S2")
     assert f.loc["D", "defines"] == "." and per_chrom == {"t1": ["A"], "t2": ["A"]}
 
@@ -199,3 +198,25 @@ def test_only_decisive_retrotransposon_evidence_rejects():
     assert rej == {} and set(out.cls) == {"centromeric"}
     out, _, rej = choose_with_te(fams, mains, chroms, p, None, ("CRM", far, True))
     assert rej == {"CentBr": (2, 2)} and set(out.cls) == {"other"}
+
+
+def test_end_zone_counts_only_two_ended_arrays():
+    """Subtelomeric repeats cap both ends; a centromere is one locus even next to an end. Fragaria x ananassa Chr1D:
+    its CENH3-bound Type II array lies 1.0 Mb from the end of a 27-Mb chromosome and was vetoed as subtelomeric by
+    the old one-ended zone with a 1-Mb floor."""
+    from cenrep.classify import end_zone, end_zone_bp
+    L = 27_106_190
+    assert end_zone(L, P) == int(0.05 * L) and end_zone(2_000_000, P) == 100_000      # no floor: small chromosomes
+    acro = [(25_974_330, 26_073_822)]                                                  # one end only
+    assert end_zone_bp(acro, L, P) == 0
+    both = [(0, 40_000), (L - 30_000, L)]
+    assert end_zone_bp(both, L, P) == 70_000
+
+
+def test_acrocentric_satellite_can_be_centromeric():
+    rows = [arr("A", "c1", 5_000_000, 1000), arr("A", "c2", 5_000_000, 1000), arr("A", "c3", 5_000_000, 1000),
+            arr("T", "c4", 9_700_000, 400)]                                            # c4: centromere near one end
+    info = {"A": dict(superfamily="A", length=180, rdna="."), "T": dict(superfamily="T", length=146, rdna=".")}
+    fams, mains = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), CH, None, P, info)
+    fams, per_chrom = choose_centromeric(fams, mains, CH, P, info)
+    assert fams.set_index("family").loc["T", "eligible"] and per_chrom["c4"] == ["T"]
