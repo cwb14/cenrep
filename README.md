@@ -133,6 +133,7 @@ Flags name each reason: `low_satellite`, `competing_cluster`, `near_end`, `diffu
   2–10 Mb off on 4, some at high confidence.
 - Under-assembled centromeres give short calls. Lengths reflect the assembly.
 - In large grass genomes, calls on small satellite arrays inside wide CRM cores can be offset from CENH3 by a few Mb.
-- Chromosome ends: a family counts as subtelomeric only where it sits in both end zones (5% of length at each end)
-  of a chromosome. An acrocentric centromere next to one end is kept but flagged `near_end` (*Fragaria* Chr1D,
-  CENH3-bound, 1.0 Mb from the end). A subtelomeric repeat present at one end only can still be called.
+- Chromosome ends: a family is subtelomeric when most of it lies beyond the outermost genes (needs `genes/`; else
+  the terminal 5% of each sequence). An acrocentric centromere next to an end is kept but flagged `near_end`
+  (*Fragaria* Chr1D, CENH3-bound, 1.0 Mb from the end). Gene models reaching into a subtelomere can let a small
+  subtelomeric family through (flagged `near_end`).

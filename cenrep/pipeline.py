@@ -29,8 +29,8 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
 # 0.6.0 = classify: dominant column; centromeres: retrotransposon evidence (tes/), honesty cap without it.
 # 0.7.0 = centromeres: with decisive (CRM) evidence a satellite call away from the core is replaced by the core.
-STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.7.0",
-                 "centromeres": "0.8.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
+STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.8.0",
+                 "centromeres": "0.9.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {
     "trf": ["trf_chunk", "trf_overlap"],
@@ -195,19 +195,31 @@ class Pipeline:
                                      self._p("annotate", f"{g.name}.arrays.tsv"), groups)
 
     def stage_classify(self):
+        """An rDNA-spacer tag in one genome holds in all genomes of the complex (one family = one sequence; rRNA genes
+        are often missing from an assembly, so their absence next to the arrays is weak evidence)."""
+        info = self.fam_info()
+        metrics, rds, elsewhere = {}, {}, {}
         for g in self.genomes:
-            info = self.fam_info()
-            fams, mains = classify.family_metrics(self.arrays(g), g.chroms, self.genes(g), self.p, info)
+            metrics[g.name] = classify.family_metrics(self.arrays(g), g.chroms, self.genes(g), self.p, info)
+            if g.name not in self.borrow:
+                fams = metrics[g.name][0]
+                elig = list(fams.family[fams.eligible.astype(bool)])
+                rds[g.name] = rd = families.rdna_neighbourhood(g.fasta, g.chroms, self.arrays(g), elig,
+                                                               self._p("classify", f"rdna_{g.name}"), self.threads,
+                                                               self.p.rdna_flank, self.p.rdna_arrays)
+                for f, (n, k) in rd.items():
+                    if n and k / n >= self.p.rdna_array_frac and f not in elsewhere:
+                        elsewhere[f] = (g.name, k, n)
+        for g in self.genomes:
+            fams, mains = metrics[g.name]
             if g.name in self.borrow:
                 src = {s: self.fams(s, "classify") for s in self.borrow[g.name]}
                 fams, per_chrom = classify.borrow_centromeric(fams, mains, src, self.p)
                 how = f" (borrowed from {'+'.join(src)})"
             else:
-                elig = list(fams.family[fams.eligible.astype(bool)])
-                rd = families.rdna_neighbourhood(g.fasta, g.chroms, self.arrays(g), elig,
-                                                 self._p("classify", f"rdna_{g.name}"), self.threads,
-                                                 self.p.rdna_flank, self.p.rdna_arrays)
-                fams = classify.apply_rdna(fams, rd, self.p)
+                rd = rds[g.name]
+                other = {f: v for f, v in elsewhere.items() if v[0] != g.name}
+                fams = classify.apply_rdna(fams, rd, self.p, other)
                 tagged = [f"{f} ({k}/{n})" for f, (n, k) in rd.items() if n and k / n >= self.p.rdna_array_frac]
                 if tagged:
                     log.info(f"classify: {g.name}: rDNA spacer repeats (not centromeric): {', '.join(tagged)}")

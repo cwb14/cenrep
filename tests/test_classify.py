@@ -200,23 +200,37 @@ def test_only_decisive_retrotransposon_evidence_rejects():
     assert rej == {"CentBr": (2, 2)} and set(out.cls) == {"other"}
 
 
-def test_end_zone_counts_only_two_ended_arrays():
-    """Subtelomeric repeats cap both ends; a centromere is one locus even next to an end. Fragaria x ananassa Chr1D:
-    its CENH3-bound Type II array lies 1.0 Mb from the end of a 27-Mb chromosome and was vetoed as subtelomeric by
-    the old one-ended zone with a 1-Mb floor."""
-    from cenrep.classify import end_zone, end_zone_bp
+def test_subtelomere_is_beyond_the_outermost_gene():
+    """The subtelomere is the stretch between a chromosome end and its outermost gene. Fragaria x ananassa Chr1D: the
+    CENH3-bound Type II array lies 1.0 Mb from the end with 5 genes beyond it (kept); rice TrsC and the Solanum 182-bp
+    blocks have no gene beyond them (subtelomeric), at one end or both."""
+    import numpy as np
+    from cenrep.classify import end_zone, terminal_bp
     L = 27_106_190
     assert end_zone(L, P) == int(0.05 * L) and end_zone(2_000_000, P) == 100_000      # no floor: small chromosomes
-    acro = [(25_974_330, 26_073_822)]                                                  # one end only
-    assert end_zone_bp(acro, L, P) == 0
-    both = [(0, 40_000), (L - 30_000, L)]
-    assert end_zone_bp(both, L, P) == 70_000
+    mids = np.array([10_000, 5_000_000, 26_500_000, 27_030_000])
+    assert terminal_bp([(25_974_330, 26_073_822)], L, P, mids) == 0                    # genes beyond: not terminal
+    assert terminal_bp([(0, 9_000)], L, P, mids) == 9_000                              # before the first gene
+    assert terminal_bp([(27_040_000, 27_100_000)], L, P, mids) == 60_000               # after the last gene
+    assert terminal_bp([(25_974_330, 26_073_822)], L, P, None) == 99_492               # no genes: 5% end zone
 
 
 def test_acrocentric_satellite_can_be_centromeric():
+    import numpy as np
     rows = [arr("A", "c1", 5_000_000, 1000), arr("A", "c2", 5_000_000, 1000), arr("A", "c3", 5_000_000, 1000),
             arr("T", "c4", 9_700_000, 400)]                                            # c4: centromere near one end
     info = {"A": dict(superfamily="A", length=180, rdna="."), "T": dict(superfamily="T", length=146, rdna=".")}
-    fams, mains = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), CH, None, P, info)
+    genes = {c: np.array([100_000, 2_000_000, 9_900_000, 9_950_000]) for c in CH}      # genes beyond the c4 array
+    fams, mains = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), CH, genes, P, info)
     fams, per_chrom = choose_centromeric(fams, mains, CH, P, info)
     assert fams.set_index("family").loc["T", "eligible"] and per_chrom["c4"] == ["T"]
+    bare = {c: np.array([100_000, 2_000_000, 9_000_000]) for c in CH}                  # no gene beyond: subtelomeric
+    fams, _ = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), CH, bare, P, info)
+    assert "subtel_frac" in fams.set_index("family").loc["T", "reason"]
+
+
+def test_rdna_tag_in_one_genome_holds_in_all():
+    from cenrep.classify import apply_rdna
+    fams = pd.DataFrame([dict(family="R", eligible=True, reason="eligible"), dict(family="A", eligible=True, reason="eligible")])
+    out = apply_rdna(fams, {"R": (6, 1)}, P, elsewhere={"R": ("G2", 5, 9)}).set_index("family")
+    assert not out.loc["R", "eligible"] and "G2" in out.loc["R", "reason"] and out.loc["A", "eligible"]

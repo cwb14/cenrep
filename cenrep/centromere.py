@@ -6,7 +6,7 @@ import pandas as pd
 import pysam
 
 from . import longunit
-from .classify import end_zone, end_zone_bp, make_clusters
+from .classify import end_zone, make_clusters, terminal_bp
 from .genomes import count_in
 from .te import agrees
 from .util import log, union_bp
@@ -47,7 +47,7 @@ def longunit_call(lu_c: pd.DataFrame, L: int, genes_c, gene_density, p):
     bpc = union_bp(iv)
     cl = make_clusters(iv, p.cluster_gap)
     m = cl[0]
-    if m.bp < p.chrom_min_bp or m.bp / bpc < p.min_concentration or end_zone_bp(iv, L, p) / bpc >= p.max_subtel_frac:
+    if m.bp < p.chrom_min_bp or m.bp / bpc < p.min_concentration or terminal_bp(iv, L, p, genes_c) / bpc >= p.max_subtel_frac:
         return None
     if genes_c is not None and gene_density:
         if (count_in(genes_c, m.start, m.end) / (m.end - m.start)) / gene_density >= p.max_gene_ratio:

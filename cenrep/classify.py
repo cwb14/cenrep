@@ -42,12 +42,18 @@ def end_zone(L: int, p) -> int:
     return int(p.subtel_frac_len * L)
 
 
-def end_zone_bp(iv, L: int, p) -> int:
-    """bp of iv in the two end zones, counted only when iv reaches both: subtelomeric repeats cap both ends of a
-    chromosome, while a centromere is one locus even next to an end (acrocentric and telocentric chromosomes)."""
-    z = end_zone(L, p)
-    left, right = clipped_bp(iv, 0, z), clipped_bp(iv, L - z, L)
-    return left + right if left and right else 0
+def terminal_bp(iv, L: int, p, mids=None) -> int:
+    """bp of iv in the subtelomeres: the stretch between each chromosome end and its outermost gene (the textbook
+    subtelomere). A centromere has a gene-bearing arm on both sides even next to an end (Fragaria x ananassa Chr1D:
+    CENH3-bound Type II array 1.0 Mb from the end, 5 genes beyond it); subtelomeric repeats have none beyond them,
+    whether at one end or both (rice TrsC, Solanum 182-bp blocks). Without >= 2 gene loci on the sequence: the
+    terminal subtel_frac_len at each end."""
+    if mids is not None and len(mids) >= 2 and mids[0] < mids[-1]:
+        lo, hi = int(mids[0]), int(mids[-1])
+    else:
+        z = end_zone(L, p)
+        lo, hi = z, L - z
+    return clipped_bp(iv, 0, lo) + clipped_bp(iv, hi, L)
 
 
 def interval_gap(a, b) -> int:
@@ -64,7 +70,8 @@ def related(f: str, g: str, fam_info) -> bool:
 
 
 def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None):
-    """fam_info: {fam: {superfamily, length, rdna}} from the families stage (optional)."""
+    """fam_info: {fam: {superfamily, length, rdna}} from the families stage (optional). A family with most of its bp in
+    subtelomeres (terminal_bp) is subtelomeric."""
     total = sum(chroms.values())
     n_genes = sum(len(v) for v in genes.values()) if genes else 0
     density = n_genes / total if n_genes else None
@@ -76,7 +83,7 @@ def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None):
             iv = list(zip(d.start, d.end))
             bpc = union_bp(iv)
             bp += bpc
-            subtel += end_zone_bp(iv, chroms[c], p)
+            subtel += terminal_bp(iv, chroms[c], p, genes.get(c) if genes else None)
             m = make_clusters(iv, p.cluster_gap)[0]
             mains[(fam, c)] = m
             if bpc >= p.chrom_min_bp:
@@ -147,15 +154,22 @@ def choose_centromeric(fams: pd.DataFrame, mains: dict, chroms: dict, p, fam_inf
     return fams, per_chrom
 
 
-def apply_rdna(fams: pd.DataFrame, rdna: dict, p) -> pd.DataFrame:
+def apply_rdna(fams: pd.DataFrame, rdna: dict, p, elsewhere: dict = None) -> pd.DataFrame:
     """Families whose largest arrays sit among 45S rRNA genes (rdna_neighbourhood) are rDNA spacer repeats (NORs):
-    never centromeric."""
+    never centromeric. elsewhere: {fam: (genome, k, n)} tagged so in another genome of the complex. rRNA genes are
+    often missing from assemblies, so their presence next to the arrays in one genome is the evidence, and their
+    absence in another is not (Lemna: one family flanked by 45S genes at 5/9 and 6/10 arrays in two genomes, 1/6 in a
+    third, where it was called centromeric)."""
     fams = fams.copy()
     for i, r in fams.iterrows():
         n, k = rdna.get(r.family, (0, 0))
         if n and k / n >= p.rdna_array_frac:
             fams.loc[i, ["eligible", "reason"]] = [False, f"rDNA-associated: 45S rRNA gene within {p.rdna_flank} bp "
                                                           f"of {k}/{n} largest arrays (rDNA spacer repeat)"]
+        elif elsewhere and r.family in elsewhere and r.eligible:
+            g, k2, n2 = elsewhere[r.family]
+            fams.loc[i, ["eligible", "reason"]] = [False, f"rDNA-associated in {g}: 45S rRNA gene within "
+                                                          f"{p.rdna_flank} bp of {k2}/{n2} largest arrays there"]
     return fams
 
 
