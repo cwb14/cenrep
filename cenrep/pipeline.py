@@ -288,7 +288,7 @@ class Pipeline:
             fams = classify.assign_roles(fams, self.p, borrowed)
             n = fams.role.value_counts()
             log.info(f"centromeres: {g.name}: family roles: "
-                     + ", ".join(f"{r} {n[r]}" for r in classify.ROLES + ["unassessed"] if r in n))
+                     + (", ".join(f"{r} {n[r]}" for r in classify.ROLES + ["unassessed"] if r in n) or "none (no families)"))
             centromere.write_regions(rows, self._p("centromeres", f"{g.name}.regions.tsv"))
             lu.to_csv(self._p("centromeres", f"{g.name}.longunit.tsv"), sep="\t", index=False)
             fams.to_csv(self._p("centromeres", f"{g.name}.families.tsv"), sep="\t", index=False)
