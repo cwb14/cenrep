@@ -234,3 +234,27 @@ def test_rdna_tag_in_one_genome_holds_in_all():
     fams = pd.DataFrame([dict(family="R", eligible=True, reason="eligible"), dict(family="A", eligible=True, reason="eligible")])
     out = apply_rdna(fams, {"R": (6, 1)}, P, elsewhere={"R": ("G2", 5, 9)}).set_index("family")
     assert not out.loc["R", "eligible"] and "G2" in out.loc["R", "reason"] and out.loc["A", "eligible"]
+
+
+def test_subtelomeric_vote_over_the_complex():
+    """A family terminal in one genome only (truncated assembly end, Populus clone 741) stays eligible; one terminal in
+    most genomes (rice TrsC, Solanum 182 bp) is subtelomeric everywhere."""
+    rows = [arr("T", "c4", 9_700_000, 400)]
+    fams, _ = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), CH, None, P, subtel_vote={"T": (1, 3)})
+    assert fams.set_index("family").loc["T", "eligible"]                       # 1/3 genomes: not subtelomeric
+    mid = [arr("T", "c4", 5_000_000, 400)]
+    fams, _ = family_metrics(pd.DataFrame(mid, columns=ARR_COLS), CH, None, P, subtel_vote={"T": (2, 3)})
+    f = fams.set_index("family").loc["T"]
+    assert not f.eligible and "2/3 genomes" in f.reason                        # interior here, subtelomeric elsewhere
+
+
+def test_te_kinds_are_sequence_related_not_period_related():
+    """Populus: the 148-bp knob (own superfamily) must not drag the 156-bp centromeric family into its rejection."""
+    from cenrep.classify import same_sequence
+    info = {"K": dict(superfamily="K", chain_group="K", length=148, rdna="."),
+            "C": dict(superfamily="C", chain_group="C", length=156, rdna="."),
+            "C2": dict(superfamily="C", chain_group="C2", length=155, rdna="."),
+            "O": dict(superfamily="O165", chain_group="O", length=155, rdna="."),
+            "O2": dict(superfamily="O155", chain_group="O", length=165, rdna=".")}
+    assert not same_sequence("K", "C", info)
+    assert same_sequence("C", "C2", info) and same_sequence("O", "O2", info)    # superfamily / chain group

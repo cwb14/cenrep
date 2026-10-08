@@ -23,8 +23,10 @@ Without the file, cenrep is a satellite-only tool and the honesty rule below app
    whose smoothed count is at least half the peak count (full width at half maximum).
 2. **Significance.** With k of the chromosome's n elements of the clade in a core of length c, the core is
    significant if the binomial tail P(X ≥ k; n, c/L) × (L/c) < 1e-3. The L/c factor is a Bonferroni correction for
-   the number of places a core could sit; 1e-3 is the conventional level. Only chromosomes with ≥ 10 elements of the
-   clade are tested.
+   the number of places a core could sit; 1e-3 is the conventional level. Only chromosomes with ≥ 5 elements of the
+   clade are tested (v0.8.5; was 10, which left most chromosomes of the *Sphagnum troendelagicum* B haplotype
+   untested although 8–17 Bryco elements cluster at one locus on each; 5 keeps a single nested cluster of 2–3
+   elements from passing alone).
 3. **Marker clade.** Candidates are clades with a significant core on the majority of chromosomes.
    - If CRM is a candidate, it is the marker and its evidence is **decisive**. CR chromoviruses are the
      centromere-specific LTR lineage of plants: CRM in maize, CRR in rice, CRB in *Brassica*, CRS in sugarcane.
@@ -39,8 +41,11 @@ Without the file, cenrep is a satellite-only tool and the honesty rule below app
 4. **Agreement.** A call agrees with the core if the gap between them is at most the wider of the two. Two estimates
    of one locus; centromeric retrotransposons are partly pericentromeric, so cores can sit beside the satellite array.
 5. **Satellite families on trial (classify, decisive evidence only).**
-   - Centromeric family kinds are tested: related families (subfamilies, CentBr1/2, CEN180/AthCEN159) count
-     together, so a subfamily on a few chromosomes is not rejected alone.
+   - Centromeric family kinds are tested: sequence-related families (same superfamily at ≥ 70% identity, or one
+     chain of close subfamilies: CentBr1/2, CentO 155/165) count together, so a subfamily on a few chromosomes is
+     not rejected alone. v0.8.5 (I021): period alone no longer makes families kin. Before, the *Populus* 148-bp
+     knob repeat (no sequence similarity) was chained with the 144/156-bp centromeric satellites, and its
+     rejection took them along.
    - A chromosome agrees if any member's main cluster agrees with its core. A kind whose clusters disagree on the
      majority of its chromosomes is made ineligible: "main clusters away from the CRM retrotransposon centromere
      (k/n)".

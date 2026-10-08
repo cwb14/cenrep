@@ -29,7 +29,7 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
 # 0.6.0 = classify: dominant column; centromeres: retrotransposon evidence (tes/), honesty cap without it.
 # 0.7.0 = centromeres: with decisive (CRM) evidence a satellite call away from the core is replaced by the core.
-STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.8.0",
+STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.9.0",
                  "centromeres": "0.9.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {
@@ -131,7 +131,8 @@ class Pipeline:
 
     def fam_info(self) -> dict:
         f = self.fam_table()
-        return {r.fam_id: dict(superfamily=r.superfamily, length=int(r.consensus_len), rdna=r.rdna)
+        return {r.fam_id: dict(superfamily=r.superfamily, length=int(r.consensus_len), rdna=r.rdna,
+                               chain_group=getattr(r, "chain_group", r.fam_id))
                 for r in f.itertuples(index=False)}
 
     def monomers(self, g):
@@ -195,12 +196,20 @@ class Pipeline:
                                      self._p("annotate", f"{g.name}.arrays.tsv"), groups)
 
     def stage_classify(self):
-        """An rDNA-spacer tag in one genome holds in all genomes of the complex (one family = one sequence; rRNA genes
+        """Family character is judged over the complex (one family = one sequence): subtelomeric when so in at least
+        half of the chromosome-level genomes that carry it; an rDNA-spacer tag in one genome holds in all (rRNA genes
         are often missing from an assembly, so their absence next to the arrays is weak evidence)."""
         info = self.fam_info()
+        vote = {}                                         # subtelomeric votes over the chromosome-level genomes
+        for g in self.genomes:
+            if g.name not in self.borrow:
+                for f, (s, b) in classify.terminal_share(self.arrays(g), g.chroms, self.genes(g), self.p).items():
+                    if b >= self.p.chrom_min_bp:
+                        k, n = vote.get(f, (0, 0))
+                        vote[f] = (k + (s >= self.p.max_subtel_frac * b), n + 1)
         metrics, rds, elsewhere = {}, {}, {}
         for g in self.genomes:
-            metrics[g.name] = classify.family_metrics(self.arrays(g), g.chroms, self.genes(g), self.p, info)
+            metrics[g.name] = classify.family_metrics(self.arrays(g), g.chroms, self.genes(g), self.p, info, vote)
             if g.name not in self.borrow:
                 fams = metrics[g.name][0]
                 elig = list(fams.family[fams.eligible.astype(bool)])

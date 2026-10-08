@@ -69,9 +69,35 @@ def related(f: str, g: str, fam_info) -> bool:
     return a["superfamily"] == b["superfamily"] or abs(a["length"] / b["length"] - 1) <= RELATED_LEN_TOL
 
 
-def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None):
+def same_sequence(f: str, g: str, fam_info) -> bool:
+    """Families related by sequence: same superfamily (>= RELATED_IDENT) or chain group (close subfamilies, CentO
+    155/165). Period alone is not kinship: the Populus 148-bp knob repeat and the 144/156-bp centromeric satellites
+    share no sequence. Without family info every pair counts as related."""
+    if fam_info is None:
+        return True
+    a, b = fam_info[f], fam_info[g]
+    return a["superfamily"] == b["superfamily"] or (a.get("chain_group", f) == b.get("chain_group", g))
+
+
+def terminal_share(arrays: pd.DataFrame, chroms: dict, genes, p) -> dict:
+    """{family: (bp in subtelomeres, total bp)} of one genome (terminal_bp)."""
+    out = {}
+    for fam, g in arrays.groupby("family"):
+        s = b = 0
+        for c, d in g.groupby("chrom"):
+            iv = list(zip(d.start, d.end))
+            s += terminal_bp(iv, chroms[c], p, genes.get(c) if genes else None)
+            b += union_bp(iv)
+        out[fam] = (s, b)
+    return out
+
+
+def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None, subtel_vote: dict = None):
     """fam_info: {fam: {superfamily, length, rdna}} from the families stage (optional). A family with most of its bp in
-    subtelomeres (terminal_bp) is subtelomeric."""
+    subtelomeres (terminal_bp) is subtelomeric. subtel_vote: {fam: (genomes where it is subtelomeric, genomes that
+    carry it)} over the complex: the family is subtelomeric everywhere when it is so in at least half of them, else
+    nowhere (one family = one sequence). A truncated assembly end makes a centromeric array look terminal in one
+    genome (Populus clone 741 chr14A/14D); TrsC and the Solanum 182-bp repeat are terminal in most genomes."""
     total = sum(chroms.values())
     n_genes = sum(len(v) for v in genes.values()) if genes else 0
     density = n_genes / total if n_genes else None
@@ -104,7 +130,11 @@ def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None):
             fails.append(f"bp={bp}<{p.chrom_min_bp}")
         if not conc >= p.min_concentration:
             fails.append(f"concentration={conc:.2f}<{p.min_concentration}")
-        if not subtel_frac < p.max_subtel_frac:
+        vote = (subtel_vote or {}).get(fam)
+        if vote:
+            if 2 * vote[0] >= vote[1]:
+                fails.append(f"subtelomeric in {vote[0]}/{vote[1]} genomes (subtel_frac={subtel_frac:.2f})")
+        elif not subtel_frac < p.max_subtel_frac:
             fails.append(f"subtel_frac={subtel_frac:.2f}>={p.max_subtel_frac}")
         if not math.isnan(gene_ratio) and gene_ratio >= p.max_gene_ratio:
             fails.append(f"gene_ratio={gene_ratio:.2f}>={p.max_gene_ratio}")
@@ -218,7 +248,7 @@ def assign_cen_associated(fams: pd.DataFrame, arrays: pd.DataFrame, regions: dic
 
 
 def te_rejected(fams: pd.DataFrame, mains: dict, cores, fam_info=None) -> dict:
-    """Centromeric family kinds (related families: subfamilies, CentBr1/2, CEN180/AthCEN159) whose main clusters
+    """Centromeric family kinds (sequence-related families: subfamilies, CentBr1/2, CentO 155/165) whose main clusters
     disagree with the retrotransposon core on the majority of the chromosomes they define, for EVERY concentrated
     clade (cores: one {chrom: core} per candidate clade, or a single dict). A chromosome agrees if any member of the
     kind agrees there; judged per kind, so a subfamily on a few chromosomes is not rejected alone; judged against
@@ -226,9 +256,9 @@ def te_rejected(fams: pd.DataFrame, mains: dict, cores, fam_info=None) -> dict:
     tested)} (counts for the most supportive clade) for every member of each rejected kind."""
     cands = [cores] if isinstance(cores, dict) else list(cores)
     cen = [r for r in fams[fams.cls == "centromeric"].itertuples(index=False)]
-    kinds = []                                           # connected components of `related`
+    kinds = []                                           # connected components of `same_sequence`
     for r in cen:
-        hit = [k for k in kinds if any(related(r.family, x.family, fam_info) for x in k)]
+        hit = [k for k in kinds if any(same_sequence(r.family, x.family, fam_info) for x in k)]
         merged = [r] + [x for k in hit for x in k]
         kinds = [k for k in kinds if k not in hit] + [merged]
     out = {}

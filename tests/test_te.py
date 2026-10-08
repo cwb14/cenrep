@@ -36,7 +36,10 @@ def test_core_finds_a_concentrated_cluster_and_ignores_uniform_spread():
     assert c["significant"] and c["start"] <= 4_200_000 <= c["end"] and c["end"] - c["start"] <= 1_000_000
     assert c["k"] >= 55
     assert not core(np.sort(rng.integers(0, L, 100)), L)["significant"]
-    assert core(clustered[:9], L) is None                               # too few elements to estimate a peak
+    assert core(clustered[:4], L) is None                               # too few elements to estimate a peak
+    # Sphagnum-like: 8 of 9 elements of a clade in one 0.2-Mb cluster (moss genomes carry few intact LTR-RTs)
+    sparse = np.sort(np.concatenate([rng.integers(6_000_000, 6_200_000, 8), [1_000_000]]))
+    assert core(sparse, L)["significant"]
 
 
 def test_centromeric_clade_is_the_concentrated_one_on_most_chromosomes():
