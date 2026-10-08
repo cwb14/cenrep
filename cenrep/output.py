@@ -14,7 +14,7 @@ SUMMARY_COLS = ["chrom", "chrom_len", "cen_start", "cen_end", "cen_len", "eviden
                 "main_family", "main_family_bp", "cen_sat_bp", "sat_fraction", "n_arrays", "largest_array_bp",
                 "n_monomers", "mean_identity", "hor_monomers", "hor_fraction", "top_tandem_hor", "n_gaps",
                 "gap_bp", "n_genes", "gene_ratio", "other_tandem_bp", "te_clade", "te_core_start", "te_core_end"]
-FAMTAB_COLS = ["family", "fam_id", "superfamily", "consensus_len", "hmm_mode", "rdna", "genome", "class", "strength",
+FAMTAB_COLS = ["family", "fam_id", "superfamily", "consensus_len", "hmm_mode", "rdna", "genome", "class", "role", "strength",
                "defines", "bp", "n_arrays", "prevalence", "concentration", "subtel_frac", "gene_ratio",
                "median_main_bp", "eligible", "dominant", "reason"]
 LEVEL = {"centromere": 0, "satellite_DNA": 1, "tandem_repeat": 1, "higher_order_repeat": 2, "satellite_monomer": 3}
@@ -181,6 +181,8 @@ def write_genome(d: dict, names: dict, outdir, p) -> None:
         for c, s, e, t, sc, st, a_ in feats:
             f.write(f"{c}\tcenrep\t{t}\t{s + 1}\t{e}\t{sc}\t{st}\t.\t{attrs(a_)}\n")
 
+    write_arrays(g, arrays, fams, d.get("fam_info"), nm, order, outdir)
+
     rows = []
     for c, L in g.chroms.items():
         rg = regions.get(c)
@@ -209,6 +211,31 @@ def write_genome(d: dict, names: dict, outdir, p) -> None:
     hu.to_csv(outdir / f"{g.name}_hor_units.tsv", sep="\t", index=False)
 
 
+def write_arrays(g, arrays: pd.DataFrame, fams: pd.DataFrame, fam_info, nm, order: dict, outdir) -> None:
+    """<genome>_satellite_arrays.gff: every array of every family cenrep keeps, on every sequence, with the family's
+    role in this genome (classify.assign_roles) and its rDNA tag. arrays: with column ov (bp inside the centromere
+    call)."""
+    role = dict(zip(fams.family, fams.role)) if "role" in fams else {}
+    tag = dict(zip(fams.family, fams.rdna_tag)) if "rdna_tag" in fams else {}
+    a = arrays.assign(ci=arrays.chrom.map(order)).sort_values(["ci", "start", "end"])
+    k = a.groupby("chrom").cumcount() + 1
+    with open(Path(outdir) / f"{g.name}_satellite_arrays.gff", "w") as f:
+        f.write("##gff-version 3\n")
+        for c, L in g.chroms.items():
+            f.write(f"##sequence-region {c} 1 {L}\n")
+        f.write(f"# cenrep {__version__} {date.today()} genome={g.name}: every array of every satellite family; "
+                f"role = what the family is in this genome (README, Outputs)\n")
+        for r, n in zip(a.itertuples(index=False), k):
+            rd = tag.get(r.family, ".")
+            if not isinstance(rd, str) or rd in ("", "."):
+                rd = (fam_info or {}).get(r.family, {}).get("rdna", ".")
+            a_ = dict(ID=f"sat_{r.chrom}_{n}", family=nm(r.family), role=role.get(r.family, "."),
+                      rdna=rd if rd != "." else None, monomer_len=r.monomer_len, n_monomers=r.n_monomers,
+                      mean_identity=round(r.mean_identity, 3),
+                      in_centromere="true" if r.ov >= 0.5 * (r.end - r.start) else "false")
+            f.write(f"{r.chrom}\tcenrep\tsatellite_DNA\t{r.start + 1}\t{r.end}\t.\t{r.strand}\t.\t{attrs(a_)}\n")
+
+
 def write_families(fam: pd.DataFrame, data: dict, names: dict, hmm_path, fa_path, outdir) -> None:
     outdir = Path(outdir)
     rows = []
@@ -219,13 +246,15 @@ def write_families(fam: pd.DataFrame, data: dict, names: dict, hmm_path, fa_path
                        consensus_len=r.consensus_len, hmm_mode=r.hmm_mode, rdna=getattr(r, "rdna", "."), genome=gname)
             if r.fam_id in f.index:
                 x = f.loc[r.fam_id]
-                row.update({"class": x.cls, "strength": x.strength, "defines": x.defines, "bp": x.bp,
+                row.update({"class": x.cls, "role": getattr(x, "role", "."), "strength": x.strength,
+                            "defines": x.defines, "bp": x.bp,
                             "n_arrays": x.n_arrays, "prevalence": x.prevalence, "concentration": x.concentration,
                             "subtel_frac": x.subtel_frac, "gene_ratio": x.gene_ratio,
                             "median_main_bp": x.median_main_bp, "eligible": x.eligible,
                             "dominant": getattr(x, "dominant", False), "reason": x.reason})
             else:
-                row.update({"class": "absent", "bp": 0, "n_arrays": 0, "reason": "no arrays in this genome"})
+                row.update({"class": "absent", "role": "absent", "bp": 0, "n_arrays": 0,
+                            "reason": "no arrays in this genome"})
             rows.append(row)
     pd.DataFrame(rows, columns=FAMTAB_COLS).to_csv(outdir / "satellite_families.tsv", sep="\t", index=False,
                                                    float_format="%.3f", na_rep=".")

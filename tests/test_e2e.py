@@ -104,6 +104,27 @@ def test_resume_and_param_change(synth_run, monkeypatch):
     Pipeline(cdir, 2, root / "cache", changed, force="classify")          # accepted (deletes classify+ checkpoints)
 
 
+def test_every_array_is_reported_with_family_and_role(synth_run):
+    """<genome>_satellite_arrays.gff holds every array of every kept family, with the satellite_families.tsv name and
+    the family's role in that genome."""
+    from cenrep.classify import ROLES
+    from cenrep.genomes import load_fai
+    cdir, truth, _ = synth_run
+    out = cdir / "centromere"
+    fam = pd.read_csv(out / "satellite_families.tsv", sep="\t")
+    assert "role" in fam.columns and set(fam.role) <= set(ROLES) | {"absent", "unassessed"}
+    for g in truth["genomes"]:
+        gff = out / f"{g}_satellite_arrays.gff"
+        assert check_gff(gff, load_fai(cdir / f"{g}.fa"))
+        lines = [l.split("\t") for l in gff.read_text().splitlines() if not l.startswith("#")]
+        n = len(pd.read_csv(out / "work" / "annotate" / f"{g}.arrays.tsv", sep="\t"))
+        assert len(lines) == n > 0 and all(l[2] == "satellite_DNA" for l in lines)
+        att = [dict(kv.split("=", 1) for kv in l[8].split(";")) for l in lines]
+        assert {a["family"] for a in att} <= set(fam.family)
+        role = dict(zip(fam[fam.genome == g].family, fam[fam.genome == g].role))
+        assert all(a["role"] == role[a["family"]] for a in att)
+
+
 def test_rdna_column_in_family_table(synth_run):
     cdir, _, _ = synth_run
     f = pd.read_csv(cdir / "centromere" / "satellite_families.tsv", sep="\t", dtype=str)

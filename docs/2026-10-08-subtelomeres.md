@@ -36,6 +36,21 @@
     *O. punctata* 0/48, *O. malampuzhaensis* 1/48 and *Fragaria* 2/84 (both as v0.8.4), *Lemna* 2/126, *Poa* 0/28,
     *Solanum* 16/72 vs v0.8.2 (CENH3 within 1 Mb unchanged at 7/11).
   - Rejected alternative: pooling bp over the complex lets one large genome decide for all.
+- **v0.8.6 (I025): the vote may clear a verdict, never impose one on an interior genome.** Position evidence has three
+  grades in each genome:
+  - interior (most bp neither beyond the outermost genes nor in the terminal 5%): direct evidence, never overruled;
+  - near-end (gene-bounded but in the terminal 5%; `near_end_bp`): ambiguous, since gene models can reach into a
+    subtelomere (I020);
+  - terminal (beyond the outermost genes): ambiguous, since it may be a truncated assembly end.
+  A near-end or terminal family is subtelomeric only if it is terminal in at least half of the genomes carrying it.
+  - Why: v0.8.5 made radish CL1 (CENH3-bound; 37.6 Mb, 5% terminal in *R. sativus*) subtelomeric everywhere,
+    because the RRCC assembly ends all 9 radish chromosomes in their centromeres (2/3 genomes terminal).
+  - Pooling bp fixes RRCC (0.23) but not *Populus* Palv78 (0.88: one 2.2-Mb truncated-end array outweighs the
+    interior copies). Requiring every genome to agree fails the *Solanum* 183-bp repeat, whose small interior copies
+    sit in 3 genomes and whose large arrays are terminal in 3.
+  - Offline check (scratchpad i025/three_state.py): RRCC CL1 kept in radish; *Populus* clone 741 terminal-only
+    families kept; *S. acaule* SG3 183-bp near-end blocks rejected (I020, as v0.8.5); *Fragaria* Chr1D Type II
+    (near-end, vote 0/2) kept; TrsC and the *Solanum* 182-bp repeat rejected.
 
 ## rDNA spacer tags
 - A family tagged as a 45S rDNA spacer repeat in one genome (most of its largest arrays within 15 kb of a 45S gene)
@@ -48,4 +63,4 @@
 - Pooling the two-ended share over the complex fixes TrsC (two-ended in the C genomes). It does not fix
   one-sided subtelomeric repeats (*Solanum*), so the definition itself had to change.
 
-Versions: classify 0.9.0 (v0.8.5), centromeres 0.9.0.
+Versions: classify 0.9.0 (v0.8.5), 0.9.2 (v0.8.6); centromeres 0.9.1.

@@ -11,7 +11,11 @@ from .params import RELATED_LEN_TOL
 from .util import clipped_bp, log, union_bp
 
 CLS_COLS = ["family", "bp", "n_arrays", "prevalence", "concentration", "subtel_frac", "gene_ratio",
-            "median_main_bp", "eligible", "cls", "strength", "defines", "dominant", "reason"]
+            "median_main_bp", "eligible", "cls", "strength", "defines", "dominant", "reason", "subtelomeric",
+            "rdna_tag", "role"]
+# what a family is in one genome, first match wins (assign_roles); the tool's purpose is the centromere, the rest is
+# what its tests found along the way
+ROLES = ["rDNA", "centromeric", "cen_associated", "subtelomeric", "interstitial", "dispersed", "minor"]
 
 
 @dataclass
@@ -56,6 +60,17 @@ def terminal_bp(iv, L: int, p, mids=None) -> int:
     return clipped_bp(iv, 0, lo) + clipped_bp(iv, hi, L)
 
 
+def near_end_bp(iv, L: int, p, mids=None) -> int:
+    """bp of iv near a chromosome end: in the subtelomere (terminal_bp) or within the terminal end zone. Gene models
+    can reach into a subtelomere (Solanum acaule SG3 183-bp blocks, I020), so a gene-bounded array this close to an
+    end is ambiguous position evidence, not direct evidence of an interior locus."""
+    z = end_zone(L, p)
+    lo, hi = z, L - z
+    if mids is not None and len(mids) >= 2 and mids[0] < mids[-1]:
+        lo, hi = max(lo, int(mids[0])), min(hi, int(mids[-1]))
+    return min(union_bp(iv), clipped_bp(iv, 0, lo) + clipped_bp(iv, max(lo, hi), L))
+
+
 def interval_gap(a, b) -> int:
     return max(0, max(a.start, b.start) - min(a.end, b.end))
 
@@ -95,21 +110,28 @@ def terminal_share(arrays: pd.DataFrame, chroms: dict, genes, p) -> dict:
 def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None, subtel_vote: dict = None):
     """fam_info: {fam: {superfamily, length, rdna}} from the families stage (optional). A family with most of its bp in
     subtelomeres (terminal_bp) is subtelomeric. subtel_vote: {fam: (genomes where it is subtelomeric, genomes that
-    carry it)} over the complex: the family is subtelomeric everywhere when it is so in at least half of them, else
-    nowhere (one family = one sequence). A truncated assembly end makes a centromeric array look terminal in one
-    genome (Populus clone 741 chr14A/14D); TrsC and the Solanum 182-bp repeat are terminal in most genomes."""
+    carry it)} over the complex. Position evidence has three grades. Interior (most bp away from both ends: neither
+    beyond the outermost genes nor in the terminal end zone) is direct evidence and is never overruled. Terminal
+    (beyond the outermost genes) and near-end (gene-bounded but in the end zone, near_end_bp) are ambiguous: a
+    truncated assembly end or gene models reaching into a subtelomere. Such a family is subtelomeric here only if it
+    is terminal in at least half of the genomes. Cases: Populus clone 741 chr14A/14D (terminal in 1 genome: kept);
+    the RRCC radish subgenome, whose centromeres all end their chromosomes, does not make CL1 subtelomeric in the
+    interior R. sativus; S. acaule SG3 183-bp blocks (near-end, terminal elsewhere: rejected); TrsC and the Solanum
+    182-bp repeat (terminal in most genomes: rejected)."""
     total = sum(chroms.values())
     n_genes = sum(len(v) for v in genes.values()) if genes else 0
     density = n_genes / total if n_genes else None
     rows, mains = [], {}
     for fam, g in arrays.groupby("family"):
-        bp = subtel = gcount = gspan = 0
+        bp = subtel = near = gcount = gspan = 0
         shares, main_bps = [], []
         for c, d in g.groupby("chrom"):
             iv = list(zip(d.start, d.end))
             bpc = union_bp(iv)
             bp += bpc
-            subtel += terminal_bp(iv, chroms[c], p, genes.get(c) if genes else None)
+            gc = genes.get(c) if genes else None
+            subtel += terminal_bp(iv, chroms[c], p, gc)
+            near += near_end_bp(iv, chroms[c], p, gc)
             m = make_clusters(iv, p.cluster_gap)[0]
             mains[(fam, c)] = m
             if bpc >= p.chrom_min_bp:
@@ -131,18 +153,20 @@ def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None, 
         if not conc >= p.min_concentration:
             fails.append(f"concentration={conc:.2f}<{p.min_concentration}")
         vote = (subtel_vote or {}).get(fam)
-        if vote:
-            if 2 * vote[0] >= vote[1]:
-                fails.append(f"subtelomeric in {vote[0]}/{vote[1]} genomes (subtel_frac={subtel_frac:.2f})")
-        elif not subtel_frac < p.max_subtel_frac:
-            fails.append(f"subtel_frac={subtel_frac:.2f}>={p.max_subtel_frac}")
+        terminal = not subtel_frac < p.max_subtel_frac
+        near_frac = near / bp if bp else float("nan")
+        subtelomeric = (terminal or near_frac >= p.max_subtel_frac) and 2 * vote[0] >= vote[1] if vote else terminal
+        if subtelomeric:
+            fails.append(f"subtel_frac={subtel_frac:.2f}" + ("" if terminal else f", near ends {near_frac:.2f}")
+                         + (f", subtelomeric in {vote[0]}/{vote[1]} genomes" if vote else f">={p.max_subtel_frac}"))
         if not math.isnan(gene_ratio) and gene_ratio >= p.max_gene_ratio:
             fails.append(f"gene_ratio={gene_ratio:.2f}>={p.max_gene_ratio}")
         rows.append(dict(family=fam, bp=bp, n_arrays=len(g), prevalence=prevalence, concentration=conc,
                          subtel_frac=subtel_frac, gene_ratio=gene_ratio,
                          median_main_bp=float(np.median(main_bps)) if main_bps else 0.0,
                          eligible=not fails, cls="other", strength=".", defines=".", dominant=False,
-                         reason="; ".join(fails) if fails else "eligible"))
+                         reason="; ".join(fails) if fails else "eligible", subtelomeric=bool(subtelomeric),
+                         rdna_tag=rdna, role="."))
     return pd.DataFrame(rows, columns=CLS_COLS), mains
 
 
@@ -191,15 +215,22 @@ def apply_rdna(fams: pd.DataFrame, rdna: dict, p, elsewhere: dict = None) -> pd.
     absence in another is not (Lemna: one family flanked by 45S genes at 5/9 and 6/10 arrays in two genomes, 1/6 in a
     third, where it was called centromeric)."""
     fams = fams.copy()
+    if "rdna_tag" not in fams:
+        fams["rdna_tag"] = "."
     for i, r in fams.iterrows():
         n, k = rdna.get(r.family, (0, 0))
+        tag = r.rdna_tag if r.rdna_tag != "." else "45S_spacer"
         if n and k / n >= p.rdna_array_frac:
-            fams.loc[i, ["eligible", "reason"]] = [False, f"rDNA-associated: 45S rRNA gene within {p.rdna_flank} bp "
-                                                          f"of {k}/{n} largest arrays (rDNA spacer repeat)"]
-        elif elsewhere and r.family in elsewhere and r.eligible:
-            g, k2, n2 = elsewhere[r.family]
-            fams.loc[i, ["eligible", "reason"]] = [False, f"rDNA-associated in {g}: 45S rRNA gene within "
-                                                          f"{p.rdna_flank} bp of {k2}/{n2} largest arrays there"]
+            fams.loc[i, ["eligible", "reason", "rdna_tag"]] = [
+                False, f"rDNA-associated: 45S rRNA gene within {p.rdna_flank} bp of {k}/{n} largest arrays "
+                       f"(rDNA spacer repeat)", tag]
+        elif elsewhere and r.family in elsewhere:
+            fams.loc[i, "rdna_tag"] = tag                    # one family = one sequence: the tag holds everywhere
+            if r.eligible:
+                g, k2, n2 = elsewhere[r.family]
+                fams.loc[i, ["eligible", "reason"]] = [
+                    False, f"rDNA-associated in {g}: 45S rRNA gene within {p.rdna_flank} bp of {k2}/{n2} largest "
+                           f"arrays there"]
     return fams
 
 
@@ -244,6 +275,36 @@ def assign_cen_associated(fams: pd.DataFrame, arrays: pd.DataFrame, regions: dic
         if inside / r.bp >= p.cen_assoc_frac:
             fams.loc[i, ["cls", "reason"]] = ["cen_associated",
                                               f"{r.reason}; {inside / r.bp:.0%} of bp inside centromeres"]
+    return fams
+
+
+def assign_roles(fams: pd.DataFrame, p, borrowed: bool = False) -> pd.DataFrame:
+    """One role per family in this genome (ROLES, first match wins), from the tests classify already ran:
+    rDNA (5S rRNA by Rfam on the consensus, or 45S spacer: arrays among 45S rRNA genes), centromeric,
+    cen_associated (most bp inside centromere calls), subtelomeric (classify vote), interstitial (concentrated at one
+    locus per chromosome, not the centromere: knobs and other heterochromatic blocks land here; cenrep cannot tell
+    them apart), dispersed (spread along chromosomes), minor (< chrom_min_bp in this genome: too little to judge).
+    Borrowed genomes (contigs): per-chromosome tests are meaningless, so only rDNA / centromeric / cen_associated
+    are assigned and the rest is 'unassessed'."""
+    fams = fams.copy()
+    roles = []
+    for r in fams.itertuples(index=False):
+        tag = getattr(r, "rdna_tag", ".")
+        if isinstance(tag, str) and tag not in (".", ""):
+            roles.append("rDNA")
+        elif r.cls in ("centromeric", "cen_associated"):
+            roles.append(r.cls)
+        elif borrowed:
+            roles.append("unassessed")
+        elif bool(getattr(r, "subtelomeric", False)):
+            roles.append("subtelomeric")
+        elif r.bp < p.chrom_min_bp:
+            roles.append("minor")
+        elif r.concentration >= p.min_concentration:
+            roles.append("interstitial")
+        else:
+            roles.append("dispersed")
+    fams["role"] = roles
     return fams
 
 

@@ -92,8 +92,24 @@ assembly T takes its centromeric families from chromosome-level genome S), `--fo
 | `<genome>_centromeric_repeat.gff` | GFF3: `centromere` (one per called chromosome), `satellite_DNA` arrays, `satellite_monomer`, `higher_order_repeat`, other `tandem_repeat`s inside the centromere |
 | `<genome>_centromere_summary.tsv` | one row per chromosome: call coordinates, evidence, confidence, flags, main family, satellite bp, HOR fraction, gaps, genes, retrotransposon clade and core |
 | `<genome>_hor_units.tsv` | HOR units: monomer composition, copies, tandem runs |
-| `satellite_families.tsv/.fa/.hmm` | every family: class per genome (centromeric / cen_associated / other / absent), reason, consensus, HMM |
+| `<genome>_satellite_arrays.gff` | GFF3: every array of every family, on every sequence (e.g. ~21,000 in *Poa annua* A): `family` (as in `satellite_families.tsv`), `role`, `rdna` where tagged, monomer length and count, identity, `in_centromere` |
+| `satellite_families.tsv/.fa/.hmm` | every family: class and role per genome, reason, consensus, HMM |
 | `centromere_overview.pdf` | one panel per genome, one track per chromosome |
+
+**Family roles.** The tests that decide what is centromeric also say what the other families are. Each family gets
+one role per genome (first match wins):
+- `rDNA`: 5S rRNA (Rfam match on the consensus; `rdna=5S_rRNA`) or 45S spacer repeat (largest arrays among 45S
+  rRNA genes, in this or another genome of the run; `rdna=45S_spacer`).
+- `centromeric`, `cen_associated` (most bp inside centromere calls, never the main family).
+- `subtelomeric`: most bp beyond the outermost genes or in the terminal 5% of a sequence, and so in at least half
+  of the genomes (one interior genome is not overruled; truncated assembly ends can make a centromeric array look
+  terminal).
+- `interstitial`: concentrated at one locus per chromosome, but not the centromere. Knobs and other heterochromatic
+  blocks land here; cenrep cannot tell them apart.
+- `dispersed`: spread along the chromosomes. `minor`: < 20 kb in this genome, too little to judge.
+- `unassessed`: contig assemblies (`--classify-from`), where per-chromosome tests do not apply.
+Not reported: telomeres and other units < 30 bp (outside the search), 45S/5S genes themselves, and tandem repeats
+outside the ≤ 40 families kept per run.
 
 **Confidence.**
 - `high`: a satellite call with no warning flags.

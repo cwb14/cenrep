@@ -29,8 +29,8 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
 # 0.6.0 = classify: dominant column; centromeres: retrotransposon evidence (tes/), honesty cap without it.
 # 0.7.0 = centromeres: with decisive (CRM) evidence a satellite call away from the core is replaced by the core.
-STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.9.0",
-                 "centromeres": "0.9.0", "hor": "0.3.0", "output": "0.3.0", "plot": "0.4.1"}
+STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.9.2",
+                 "centromeres": "0.9.1", "hor": "0.3.0", "output": "0.4.0", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {
     "trf": ["trf_chunk", "trf_overlap"],
@@ -285,6 +285,10 @@ class Pipeline:
                 log.info(f"centromeres: {g.name}: no dominant satellite and no retrotransposon evidence; "
                          f"calls capped at low confidence")
             fams = classify.assign_cen_associated(fams, arrays, rows, self.p)
+            fams = classify.assign_roles(fams, self.p, borrowed)
+            n = fams.role.value_counts()
+            log.info(f"centromeres: {g.name}: family roles: "
+                     + ", ".join(f"{r} {n[r]}" for r in classify.ROLES + ["unassessed"] if r in n))
             centromere.write_regions(rows, self._p("centromeres", f"{g.name}.regions.tsv"))
             lu.to_csv(self._p("centromeres", f"{g.name}.longunit.tsv"), sep="\t", index=False)
             fams.to_csv(self._p("centromeres", f"{g.name}.families.tsv"), sep="\t", index=False)

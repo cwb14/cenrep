@@ -238,14 +238,25 @@ def test_rdna_tag_in_one_genome_holds_in_all():
 
 def test_subtelomeric_vote_over_the_complex():
     """A family terminal in one genome only (truncated assembly end, Populus clone 741) stays eligible; one terminal in
-    most genomes (rice TrsC, Solanum 182 bp) is subtelomeric everywhere."""
+    most genomes (rice TrsC, Solanum 182 bp) is subtelomeric where it is terminal. Other genomes never make an interior
+    family subtelomeric (R. sativus CL1, terminal only in the truncated RRCC assembly)."""
     rows = [arr("T", "c4", 9_700_000, 400)]
     fams, _ = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), CH, None, P, subtel_vote={"T": (1, 3)})
     assert fams.set_index("family").loc["T", "eligible"]                       # 1/3 genomes: not subtelomeric
+    fams, _ = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), CH, None, P, subtel_vote={"T": (2, 3)})
+    f = fams.set_index("family").loc["T"]
+    assert not f.eligible and "2/3 genomes" in f.reason                        # terminal here and in most genomes
     mid = [arr("T", "c4", 5_000_000, 400)]
     fams, _ = family_metrics(pd.DataFrame(mid, columns=ARR_COLS), CH, None, P, subtel_vote={"T": (2, 3)})
+    assert fams.set_index("family").loc["T", "eligible"]                       # interior here: never imposed
+    import numpy as np                                                         # near-end: gene-bounded, 5% zone
+    near = [arr("T", "c4", 9_700_000, 400)]
+    genes = {c: np.array([100_000, 5_000_000, 9_950_000]) for c in CH}          # a gene model beyond the array
+    fams, _ = family_metrics(pd.DataFrame(near, columns=ARR_COLS), CH, genes, P, subtel_vote={"T": (1, 2)})
     f = fams.set_index("family").loc["T"]
-    assert not f.eligible and "2/3 genomes" in f.reason                        # interior here, subtelomeric elsewhere
+    assert not f.eligible and "near ends" in f.reason                          # terminal elsewhere: S. acaule SG3
+    fams, _ = family_metrics(pd.DataFrame(near, columns=ARR_COLS), CH, genes, P, subtel_vote={"T": (0, 2)})
+    assert fams.set_index("family").loc["T", "eligible"]                       # Fragaria Chr1D Type II: kept
 
 
 def test_te_kinds_are_sequence_related_not_period_related():
@@ -258,3 +269,30 @@ def test_te_kinds_are_sequence_related_not_period_related():
             "O2": dict(superfamily="O155", chain_group="O", length=165, rdna=".")}
     assert not same_sequence("K", "C", info)
     assert same_sequence("C", "C2", info) and same_sequence("O", "O2", info)    # superfamily / chain group
+
+
+def test_roles_report_what_classify_found():
+    """One role per family and genome, first match wins: rDNA, centromeric, cen_associated, subtelomeric,
+    interstitial (concentrated, not the centromere: knobs land here), dispersed, minor; contigs: unassessed."""
+    from cenrep.classify import assign_roles
+    row = lambda fam, **k: {**dict(family=fam, bp=500_000, concentration=0.9, cls="other", subtelomeric=False,
+                                  rdna_tag="."), **k}
+    fams = pd.DataFrame([row("R5", rdna_tag="5S_rRNA", cls="centromeric"), row("C", cls="centromeric"),
+                         row("A", cls="cen_associated"), row("S", subtelomeric=True), row("K"),
+                         row("D", concentration=0.2), row("M", bp=5_000, concentration=float("nan"))])
+    r = dict(zip(fams.family, assign_roles(fams, P).role))
+    assert r == {"R5": "rDNA", "C": "centromeric", "A": "cen_associated", "S": "subtelomeric", "K": "interstitial",
+                 "D": "dispersed", "M": "minor"}
+    rb = dict(zip(fams.family, assign_roles(fams, P, borrowed=True).role))
+    assert rb["C"] == "centromeric" and rb["K"] == "unassessed" and rb["S"] == "unassessed"
+
+
+def test_45s_spacer_tag_and_5s_tag_kept():
+    from cenrep.classify import apply_rdna
+    fams = pd.DataFrame([dict(family="N", eligible=True, reason="eligible", rdna_tag="."),
+                         dict(family="F", eligible=False, reason="rDNA (5S_rRNA)", rdna_tag="5S_rRNA")])
+    out = apply_rdna(fams, {"N": (10, 9), "F": (10, 9)}, P).set_index("family")
+    assert out.loc["N", "rdna_tag"] == "45S_spacer" and out.loc["F", "rdna_tag"] == "5S_rRNA"
+    ineligible = pd.DataFrame([dict(family="N", eligible=False, reason="concentration=0.2<0.5", rdna_tag=".")])
+    out = apply_rdna(ineligible, {}, P, elsewhere={"N": ("G2", 9, 10)}).set_index("family")
+    assert out.loc["N", "rdna_tag"] == "45S_spacer" and out.loc["N", "reason"].startswith("concentration")
