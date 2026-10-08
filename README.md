@@ -132,8 +132,18 @@ Flags name each reason: `low_satellite`, `competing_cluster`, `near_end`, `diffu
   satellite-free. CENH3 ChIP on *S. verrucosum* (same assembly) puts calls within 1 Mb on 7/11 chromosomes but
   2–10 Mb off on 4, some at high confidence.
 - Under-assembled centromeres give short calls. Lengths reflect the assembly.
-- In large grass genomes, calls on small satellite arrays inside wide CRM cores can be offset from CENH3 by a few Mb.
+- In large grass genomes, a satellite array at the edge of a wide CRM core (8–19 Mb in *Aegilops*) is accepted and
+  can be 3–11 Mb from CENH3 (3/15 *Ae. geniculata* domains). The tolerance stays because CRM elements flank, rather
+  than fill, true satellite centromeres (rice CRR beside CentO): requiring overlap would move CentO calls off
+  their arrays.
+- Without CRM, retrotransposon evidence only flags. Where the assembly lacks a chromosome's centromeric array, a
+  non-centromeric satellite elsewhere on it can be called at high confidence (`te_discordant`; *B. napus* A06/A09
+  on an AT-rich 156-bp repeat). Calls are not yet checked for consistent position between homologous genomes.
 - Chromosome ends: a family is subtelomeric when most of it lies beyond the outermost genes (needs `genes/`; else
   the terminal 5% of each sequence). An acrocentric centromere next to an end is kept but flagged `near_end`
   (*Fragaria* Chr1D, CENH3-bound, 1.0 Mb from the end). Gene models reaching into a subtelomere can let a small
   subtelomeric family through (flagged `near_end`).
+  Interstitial blocks a few hundred kb from an end, with genes beyond them, are not subtelomeric by this rule
+  and can be called (*B. rapa* Chiifu v3: CL25-like AT-rich 330–350-bp repeat; `near_end`, often `gene_rich`).
+- Retrotransposon evidence needs ≥ 5 intact elements of a clade per chromosome. Genomes with few intact LTR-RTs
+  (mosses: ~10 per chromosome) are near this limit.
