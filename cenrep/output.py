@@ -16,7 +16,7 @@ SUMMARY_COLS = ["chrom", "chrom_len", "cen_start", "cen_end", "cen_len", "eviden
                 "gap_bp", "n_genes", "gene_ratio", "other_tandem_bp", "te_clade", "te_core_start", "te_core_end"]
 FAMTAB_COLS = ["family", "fam_id", "superfamily", "consensus_len", "hmm_mode", "rdna", "genome", "class", "role", "strength",
                "defines", "bp", "n_arrays", "prevalence", "concentration", "subtel_frac", "gene_ratio",
-               "median_main_bp", "eligible", "dominant", "reason"]
+               "median_main_bp", "eligible", "dominant", "in_ltr", "ltr_clade", "reason"]
 LEVEL = {"centromere": 0, "satellite_DNA": 1, "tandem_repeat": 1, "higher_order_repeat": 2, "satellite_monomer": 3}
 _ESC = {"%": "%25", ";": "%3B", "=": "%3D", "&": "%26", "\t": "%09", "\n": "%0A", "\r": "%0D"}
 
@@ -251,7 +251,8 @@ def write_families(fam: pd.DataFrame, data: dict, names: dict, hmm_path, fa_path
                             "n_arrays": x.n_arrays, "prevalence": x.prevalence, "concentration": x.concentration,
                             "subtel_frac": x.subtel_frac, "gene_ratio": x.gene_ratio,
                             "median_main_bp": x.median_main_bp, "eligible": x.eligible,
-                            "dominant": getattr(x, "dominant", False), "reason": x.reason})
+                            "dominant": getattr(x, "dominant", False), "in_ltr": getattr(x, "in_ltr", float("nan")),
+                            "ltr_clade": getattr(x, "ltr_clade", "."), "reason": x.reason})
             else:
                 row.update({"class": "absent", "role": "absent", "bp": 0, "n_arrays": 0,
                             "reason": "no arrays in this genome"})

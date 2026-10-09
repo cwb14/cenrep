@@ -12,7 +12,7 @@ from .util import clipped_bp, log, union_bp
 
 CLS_COLS = ["family", "bp", "n_arrays", "prevalence", "concentration", "subtel_frac", "gene_ratio",
             "median_main_bp", "eligible", "cls", "strength", "defines", "dominant", "reason", "subtelomeric",
-            "rdna_tag", "role"]
+            "rdna_tag", "role", "in_ltr", "ltr_clade"]
 # what a family is in one genome, first match wins (assign_roles); the tool's purpose is the centromere, the rest is
 # what its tests found along the way
 ROLES = ["rDNA", "centromeric", "cen_associated", "subtelomeric", "interstitial", "dispersed", "minor"]
@@ -183,7 +183,7 @@ def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None, 
                          median_main_bp=float(np.median(main_bps)) if main_bps else 0.0,
                          eligible=not fails, cls="other", strength=".", defines=".", dominant=False,
                          reason="; ".join(fails) if fails else "eligible", subtelomeric=bool(subtelomeric),
-                         rdna_tag=rdna, role="."))
+                         rdna_tag=rdna, role=".", in_ltr=float("nan"), ltr_clade="."))
     return pd.DataFrame(rows, columns=CLS_COLS), mains
 
 

@@ -44,6 +44,7 @@ TE_MIN_BIN = 1_000             # ... but bins of at least 1 kb
 TE_SMOOTH = 5                  # smoothing window, in bins
 TE_MIN_ELEMENTS = 5            # fewer elements of a clade on a chromosome: no peak estimate (and one nested
                                # cluster of 2-3 elements cannot pass alone); mosses carry ~10 per chromosome
+TE_DERIVED_FRAC = 0.5          # a call's main family with most array bp inside LTR retrotransposons: flag te_derived
 TE_ALPHA = 1e-3                # core significance: binomial tail x (L / core length) < 0.001 (conventional level)
 TE_CENTROMERIC_CLADE = "CRM"   # CR chromoviruses (CRM maize, CRR rice, CRB Brassica, CRS sugarcane) are
                                # centromere-specific in plants; other clades are often pericentromeric

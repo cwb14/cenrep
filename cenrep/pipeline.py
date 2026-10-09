@@ -9,7 +9,7 @@ import pyhmmer
 
 from . import __version__, annotate, centromere, classify, families, hor, output, plot, te, trf
 from .genomes import discover_genomes, load_genes
-from .params import MAX_CHROMOSOMES, Params, format_borrow, parse_borrow, to_dict
+from .params import MAX_CHROMOSOMES, TE_DERIVED_FRAC, Params, format_borrow, parse_borrow, to_dict
 from .util import CenrepError, log, require_tools
 
 STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "output", "plot"]
@@ -29,8 +29,8 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
 # 0.6.0 = classify: dominant column; centromeres: retrotransposon evidence (tes/), honesty cap without it.
 # 0.7.0 = centromeres: with decisive (CRM) evidence a satellite call away from the core is replaced by the core.
-STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.9.3",
-                 "centromeres": "0.9.1", "hor": "0.3.0", "output": "0.4.0", "plot": "0.4.1"}
+STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.9.4",
+                 "centromeres": "0.9.2", "hor": "0.3.0", "output": "0.4.1", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {
     "trf": ["trf_chunk", "trf_overlap"],
@@ -238,6 +238,13 @@ class Pipeline:
                     log.info(f"classify: {g.name}: away from the {tev[0]} retrotransposon centromere (not "
                              f"centromeric): {', '.join(f'{f} ({k}/{n})' for f, (k, n) in rejected.items())}")
                 how = ""
+            gff = te.te_gff(self.cdir, g.name)
+            if gff is not None:                               # share of each family inside LTR retrotransposons
+                iv = te.load_te_intervals(gff, g.chroms)
+                longest = max((int((e - s).max()) for s, e, _ in iv.values()), default=0)
+                ov = te.ltr_overlap(self.arrays(g), iv, longest)
+                fams["in_ltr"] = [round(ov.get(f, (float("nan"), "."))[0], 3) for f in fams.family]
+                fams["ltr_clade"] = [ov.get(f, (0, "."))[1] for f in fams.family]
             fams.to_csv(self._p("classify", f"{g.name}.families.tsv"), sep="\t", index=False)
             prim = fams[fams.cls == "centromeric"]
             log.info(f"classify: {g.name}: centromeric{how} = {', '.join(prim.family) or 'none'}; "
@@ -281,6 +288,11 @@ class Pipeline:
                                                self.work / "centromeres" / f"tmp_{g.name}", self.threads, self.p,
                                                borrowed=borrowed, te=tev, capped=capped)
             rows, lu = call_with(primary)
+            te_fams = set(fams.family[pd.to_numeric(fams.get("in_ltr"), errors="coerce") >= TE_DERIVED_FRAC]) \
+                if "in_ltr" in fams else set()
+            for r in rows.values():                          # main family mostly inside LTR retrotransposons
+                if r.get("main_family") in te_fams:
+                    r["flags"] = "te_derived" if r["flags"] in (".", "") else r["flags"] + ",te_derived"
             if capped:
                 log.info(f"centromeres: {g.name}: no dominant satellite and no retrotransposon evidence; "
                          f"calls capped at low confidence")

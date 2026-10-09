@@ -118,7 +118,8 @@ outside the ≤ 40 families kept per run.
 - `low`: weak or long-unit evidence, several flags, or no dominant satellite and no retrotransposon evidence.
 
 Flags name each reason: `low_satellite`, `competing_cluster`, `near_end`, `diffuse`, `gene_rich`, `gaps:N`,
-`te_concordant`, `te_discordant`, `satellite_away_from_core`, `no_dominant_satellite`.
+`te_concordant`, `te_discordant`, `satellite_away_from_core`, `no_dominant_satellite`, `te_derived` (the main family
+has most of its array bp inside annotated LTR retrotransposons; needs `tes/`).
 
 ## Validation
 
@@ -162,9 +163,12 @@ Flags name each reason: `low_satellite`, `competing_cluster`, `near_end`, `diffu
   subtelomeric family through (flagged `near_end`).
   Interstitial blocks a few hundred kb from an end, with genes beyond them, are not subtelomeric by this rule
   and can be called (*B. rapa* Chiifu v3: CL25-like AT-rich 330–350-bp repeat; `near_end`, often `gene_rich`).
-- Tandem repeats that are part of retrotransposons are reported as satellites. In retrotransposon centromeres,
-  the call is then in the right place (it agrees with the CRM core) but labelled `satellite`. Held-out tests
-  (fixed in advance): *Glycine* (CENH3: no centromeric satellite) gets a 1.8-kb Tekay-like tandem, and *Musa* A a
-  62-bp repeat from inside SIRE elements, as dominant families. Check a dominant family against the LTR library.
+- Tandem repeats that are part of retrotransposons, or derived from them, are reported as satellites. In
+  retrotransposon centromeres the call is then in the right place (it agrees with the CRM core), but labelled
+  `satellite`. Held-out tests (fixed in advance): *Glycine* (CENH3: no centromeric satellite) gets a 1.8-kb
+  tandem family, and *Musa* A a 62-bp repeat from inside SIRE elements, as dominant families.
+  - With `tes/`, `satellite_families.tsv` gives each family's share of array bp inside LTR retrotransposons
+    (`in_ltr`, `ltr_clade`), and such calls are flagged `te_derived`.
+  - This is not a verdict: TE-derived kb-unit arrays are the published centromeres of *Coffea*.
 - Retrotransposon evidence needs ≥ 5 intact elements of a clade per chromosome. Genomes with few intact LTR-RTs
   (mosses: ~10 per chromosome) are near this limit.

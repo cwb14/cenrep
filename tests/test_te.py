@@ -71,3 +71,20 @@ def test_marker_prefers_the_centromere_specific_crm_lineage():
     assert marker([("Ale", a), ("CRM", b)]) == ("CRM", b, True)
     assert marker([("Retand", a), ("Athila", b)]) == ("Retand", a, False)
     assert marker([]) is None
+
+
+def test_ltr_overlap_reports_tandem_repeats_inside_retrotransposons(tmp_path):
+    """Musa: a 62-bp repeat lies inside SIRE elements; a true satellite array lies outside them."""
+    import pandas as pd
+    from cenrep.te import load_te_intervals, ltr_overlap
+    gff = tmp_path / "g.gff3"
+    gff.write_text("##gff-version 3\n"
+                   "c1\tx\tLTR_retrotransposon\t1001\t9000\t.\t+\t.\tID=a;clade=SIRE\n"
+                   "c1\tx\tLTR_retrotransposon\t20001\t28000\t.\t+\t.\tID=b;clade=SIRE\n"
+                   "c1\tx\tLTR_retrotransposon\t24001\t26000\t.\t+\t.\tID=c\n")       # nested, no clade
+    iv = load_te_intervals(gff, {"c1": 100_000})
+    assert iv["c1"][2] == ["SIRE", "SIRE", "unknown"]
+    arrays = pd.DataFrame(dict(chrom=["c1"] * 3, start=[2000, 21000, 50000], end=[2500, 21500, 60000],
+                               family=["T", "T", "S"]))
+    ov = ltr_overlap(arrays, iv, longest=8000)
+    assert ov["T"] == (1.0, "SIRE") and ov["S"] == (0.0, ".")

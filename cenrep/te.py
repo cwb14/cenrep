@@ -40,6 +40,61 @@ def load_te_gff(gff, chroms: dict) -> dict:
     return {c: {ch: np.sort(np.array(v, dtype=np.int64)) for ch, v in d.items()} for c, d in out.items()}
 
 
+def load_te_intervals(gff, chroms: dict) -> dict:
+    """{chrom: (starts, ends, clades)} of all LTR retrotransposons (any clade; unlabelled = 'unknown'), sorted by
+    start, 0-based half-open."""
+    out = {}
+    with (gzip.open(gff, "rt") if str(gff).endswith(".gz") else open(gff)) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.rstrip("\r\n").split("\t")
+            if len(p) < 9 or "LTR_retrotransposon" not in p[2] or p[0] not in chroms:
+                continue
+            attrs = {k.lower(): v for k, _, v in (kv.partition("=") for kv in p[8].split(";")) if v}
+            clade = attrs.get("clade", "")
+            out.setdefault(p[0], []).append((int(p[3]) - 1, int(p[4]),
+                                             "unknown" if not clade or clade.lower() in IGNORED_CLADES else clade))
+    res = {}
+    for c, v in out.items():
+        v.sort()
+        res[c] = (np.array([x[0] for x in v], dtype=np.int64), np.array([x[1] for x in v], dtype=np.int64),
+                  [x[2] for x in v])
+    return res
+
+
+def ltr_overlap(arrays, intervals: dict, longest: int) -> dict:
+    """{family: (share of array bp inside LTR retrotransposons, clade holding most of that overlap)}. A tandem repeat
+    that lies inside retrotransposons is part of them (Musa: a 62-bp repeat inside SIRE elements), or derived from
+    them (Coffea CRM / Tekay kb units); reported, not judged. longest: the longest element, bounds the search."""
+    out = {}
+    for fam, d in arrays.groupby("family"):
+        bp = inside = 0
+        clade_bp = {}
+        for c, x in d.groupby("chrom"):
+            if c not in intervals:
+                bp += int((x.end - x.start).sum())
+                continue
+            st, en, cl = intervals[c]
+            for s, e in zip(x.start.to_numpy(), x.end.to_numpy()):
+                bp += int(e - s)
+                lo, hi = np.searchsorted(st, s - longest), np.searchsorted(st, e)
+                if lo >= hi:
+                    continue
+                os_ = np.maximum(0, np.minimum(en[lo:hi], e) - np.maximum(st[lo:hi], s))
+                if not os_.any():
+                    continue
+                cov = np.zeros(int(e - s), dtype=bool)                  # union of overlapping elements
+                for a, b in zip(np.maximum(st[lo:hi], s) - s, np.minimum(en[lo:hi], e) - s):
+                    if b > a:
+                        cov[a:b] = True
+                inside += int(cov.sum())
+                k = lo + int(np.argmax(os_))
+                clade_bp[cl[k]] = clade_bp.get(cl[k], 0) + int(os_.max())
+        out[fam] = (inside / bp if bp else 0.0, max(clade_bp, key=clade_bp.get) if clade_bp else ".")
+    return out
+
+
 def binom_sf(k: int, n: int, q: float) -> float:
     """P(X >= k), X ~ Binomial(n, q); exact sum in log space."""
     if k <= 0:
