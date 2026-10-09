@@ -41,8 +41,10 @@ def load_te_gff(gff, chroms: dict) -> dict:
 
 
 def load_te_intervals(gff, chroms: dict) -> dict:
-    """{chrom: (starts, ends, clades)} of all LTR retrotransposons (any clade; unlabelled = 'unknown'), sorted by
-    start, 0-based half-open."""
+    """{chrom: (starts, ends, clades)} of clade-classified LTR retrotransposons, sorted by start, 0-based half-open.
+    Elements without a clade are left out: an array of kb-long tandem units looks like an LTR pair to structural
+    detectors, so unclassified calls on tandem arrays are weak evidence of a retrotransposon (Carassius 1.6-2.0-kb
+    families: 50-85% inside 'unknown' elements)."""
     out = {}
     with (gzip.open(gff, "rt") if str(gff).endswith(".gz") else open(gff)) as f:
         for line in f:
@@ -53,8 +55,8 @@ def load_te_intervals(gff, chroms: dict) -> dict:
                 continue
             attrs = {k.lower(): v for k, _, v in (kv.partition("=") for kv in p[8].split(";")) if v}
             clade = attrs.get("clade", "")
-            out.setdefault(p[0], []).append((int(p[3]) - 1, int(p[4]),
-                                             "unknown" if not clade or clade.lower() in IGNORED_CLADES else clade))
+            if clade and clade.lower() not in IGNORED_CLADES:
+                out.setdefault(p[0], []).append((int(p[3]) - 1, int(p[4]), clade))
     res = {}
     for c, v in out.items():
         v.sort()

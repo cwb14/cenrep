@@ -83,7 +83,7 @@ def test_ltr_overlap_reports_tandem_repeats_inside_retrotransposons(tmp_path):
                    "c1\tx\tLTR_retrotransposon\t20001\t28000\t.\t+\t.\tID=b;clade=SIRE\n"
                    "c1\tx\tLTR_retrotransposon\t24001\t26000\t.\t+\t.\tID=c\n")       # nested, no clade
     iv = load_te_intervals(gff, {"c1": 100_000})
-    assert iv["c1"][2] == ["SIRE", "SIRE", "unknown"]
+    assert iv["c1"][2] == ["SIRE", "SIRE"]                                      # unclassified element left out
     arrays = pd.DataFrame(dict(chrom=["c1"] * 3, start=[2000, 21000, 50000], end=[2500, 21500, 60000],
                                family=["T", "T", "S"]))
     ov = ltr_overlap(arrays, iv, longest=8000)

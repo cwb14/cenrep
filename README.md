@@ -119,7 +119,7 @@ outside the ≤ 40 families kept per run.
 
 Flags name each reason: `low_satellite`, `competing_cluster`, `near_end`, `diffuse`, `gene_rich`, `gaps:N`,
 `te_concordant`, `te_discordant`, `satellite_away_from_core`, `no_dominant_satellite`, `te_derived` (the main family
-has most of its array bp inside annotated LTR retrotransposons; needs `tes/`).
+has most of its array bp inside clade-classified LTR retrotransposons; needs `tes/`).
 
 ## Validation
 
@@ -167,8 +167,11 @@ has most of its array bp inside annotated LTR retrotransposons; needs `tes/`).
   retrotransposon centromeres the call is then in the right place (it agrees with the CRM core), but labelled
   `satellite`. Held-out tests (fixed in advance): *Glycine* (CENH3: no centromeric satellite) gets a 1.8-kb
   tandem family, and *Musa* A a 62-bp repeat from inside SIRE elements, as dominant families.
-  - With `tes/`, `satellite_families.tsv` gives each family's share of array bp inside LTR retrotransposons
-    (`in_ltr`, `ltr_clade`), and such calls are flagged `te_derived`.
-  - This is not a verdict: TE-derived kb-unit arrays are the published centromeres of *Coffea*.
+  - With `tes/`, `satellite_families.tsv` gives each family's share of array bp inside clade-classified LTR
+    retrotransposons (`in_ltr`, `ltr_clade`), and calls on such families are flagged `te_derived`.
+  - Elements without a clade are ignored: kb-unit tandem arrays look like LTR pairs to structural detectors.
+  - Tandem arrays built from TE fragments (*Coffea* CRM/Tekay units, the published centromeres there) are
+    mostly not inside annotated elements, so they are rarely flagged.
+  - The flag is a report, not a verdict.
 - Retrotransposon evidence needs ≥ 5 intact elements of a clade per chromosome. Genomes with few intact LTR-RTs
   (mosses: ~10 per chromosome) are near this limit.
