@@ -296,3 +296,15 @@ def test_45s_spacer_tag_and_5s_tag_kept():
     ineligible = pd.DataFrame([dict(family="N", eligible=False, reason="concentration=0.2<0.5", rdna_tag=".")])
     out = apply_rdna(ineligible, {}, P, elsewhere={"N": ("G2", 9, 10)}).set_index("family")
     assert out.loc["N", "rdna_tag"] == "45S_spacer" and out.loc["N", "reason"].startswith("concentration")
+
+
+def test_terminal_blocks_on_most_chromosomes_are_subtelomeric_whatever_the_vote():
+    """A truncated assembly end affects one chromosome; a subtelomeric family sits at the ends of most (M. sookensis G
+    687 bp: 10/14 chromosomes, terminal in 1/4 genomes)."""
+    rows = [arr("T", c, 9_700_000, 400) for c in ("c1", "c2", "c3")]          # 3/4 chromosomes: subtelomeric
+    fams, _ = family_metrics(pd.DataFrame(rows, columns=ARR_COLS), CH, None, P, subtel_vote={"T": (1, 4)})
+    f = fams.set_index("family").loc["T"]
+    assert not f.eligible and "terminal blocks on 3/4" in f.reason
+    one = [arr("T", "c4", 9_700_000, 400)]                                     # one chromosome: rescued by the vote
+    fams, _ = family_metrics(pd.DataFrame(one, columns=ARR_COLS), CH, None, P, subtel_vote={"T": (1, 4)})
+    assert fams.set_index("family").loc["T", "eligible"]

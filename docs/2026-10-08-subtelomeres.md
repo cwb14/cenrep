@@ -63,4 +63,17 @@
 - Pooling the two-ended share over the complex fixes TrsC (two-ended in the C genomes). It does not fix
   one-sided subtelomeric repeats (*Solanum*), so the definition itself had to change.
 
-Versions: classify 0.9.0 (v0.8.5), 0.9.2 (v0.8.6); centromeres 0.9.1.
+- **v0.8.7 (I026): terminal blocks on most chromosomes are subtelomeric whatever the vote.** A truncated assembly
+  end affects one chromosome (all *Populus* cases: 1 end each); a subtelomeric family sits at the ends of most.
+  - *M. sookensis* G: a 687-bp satellite, a ~0.11-Mb interstitial block in both progenitors and the N subgenome,
+    forms 5.6 Mb of terminal blocks on 10/14 G chromosomes while Cent728 holds the centres. v0.8.6 called it
+    centromeric on 3 chromosome ends (terminal in 1/4 genomes, so the vote cleared it).
+  - Batch scan (33 non-held-out complexes; scratchpad i026/scan.py): 83 family × genome verdicts change; only
+    this family was centromeric. The others are the known subtelomeric satellites of each lineage (by length):
+    *Brassica*/*Raphanus* CL25-like ~350 bp, Triticeae/*Avena*/*Poa* pSc119.2-like 118–120 bp, *Nicotiana*
+    HRS60-like 180 bp, *Solanum* 182 bp.
+  - "Most" = more than half of the genome's sequences carry ≥ chrom_min_bp at an end (the majority rule used
+    elsewhere). Two ends were rejected as the threshold: *Populus* GM15 A Palv156 sits near the ends of
+    chr09/chr10, whose centromeres are near-terminal.
+
+Versions: classify 0.9.0 (v0.8.5), 0.9.2 (v0.8.6), 0.9.3 (v0.8.7); centromeres 0.9.1.

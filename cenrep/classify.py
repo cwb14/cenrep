@@ -60,15 +60,19 @@ def terminal_bp(iv, L: int, p, mids=None) -> int:
     return clipped_bp(iv, 0, lo) + clipped_bp(iv, hi, L)
 
 
-def near_end_bp(iv, L: int, p, mids=None) -> int:
-    """bp of iv near a chromosome end: in the subtelomere (terminal_bp) or within the terminal end zone. Gene models
-    can reach into a subtelomere (Solanum acaule SG3 183-bp blocks, I020), so a gene-bounded array this close to an
-    end is ambiguous position evidence, not direct evidence of an interior locus."""
+def near_end_sides(iv, L: int, p, mids=None) -> tuple:
+    """(left, right) bp of iv near each chromosome end: in the subtelomere (terminal_bp) or within the terminal end
+    zone. Gene models can reach into a subtelomere (Solanum acaule SG3 183-bp blocks, I020), so a gene-bounded array
+    this close to an end is ambiguous position evidence, not direct evidence of an interior locus."""
     z = end_zone(L, p)
     lo, hi = z, L - z
     if mids is not None and len(mids) >= 2 and mids[0] < mids[-1]:
         lo, hi = max(lo, int(mids[0])), min(hi, int(mids[-1]))
-    return min(union_bp(iv), clipped_bp(iv, 0, lo) + clipped_bp(iv, max(lo, hi), L))
+    return clipped_bp(iv, 0, lo), clipped_bp(iv, max(lo, hi), L)
+
+
+def near_end_bp(iv, L: int, p, mids=None) -> int:
+    return min(union_bp(iv), sum(near_end_sides(iv, L, p, mids)))
 
 
 def interval_gap(a, b) -> int:
@@ -117,13 +121,17 @@ def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None, 
     is terminal in at least half of the genomes. Cases: Populus clone 741 chr14A/14D (terminal in 1 genome: kept);
     the RRCC radish subgenome, whose centromeres all end their chromosomes, does not make CL1 subtelomeric in the
     interior R. sativus; S. acaule SG3 183-bp blocks (near-end, terminal elsewhere: rejected); TrsC and the Solanum
-    182-bp repeat (terminal in most genomes: rejected)."""
+    182-bp repeat (terminal in most genomes: rejected). A near-end or terminal family with blocks at an end of most
+    of this genome's chromosomes is subtelomeric here whatever the vote: a truncated assembly end is one chromosome's
+    (Populus: 1 end each), a subtelomeric family sits at the ends of most (M. sookensis G 687 bp on 10/14 while
+    Cent728 holds the centres; Brassica CL25-like ~350 bp, Triticeae pSc119.2-like 118-120 bp, Nicotiana HRS60-like
+    180 bp)."""
     total = sum(chroms.values())
     n_genes = sum(len(v) for v in genes.values()) if genes else 0
     density = n_genes / total if n_genes else None
     rows, mains = [], {}
     for fam, g in arrays.groupby("family"):
-        bp = subtel = near = gcount = gspan = 0
+        bp = subtel = near = end_chroms = gcount = gspan = 0
         shares, main_bps = [], []
         for c, d in g.groupby("chrom"):
             iv = list(zip(d.start, d.end))
@@ -131,7 +139,9 @@ def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None, 
             bp += bpc
             gc = genes.get(c) if genes else None
             subtel += terminal_bp(iv, chroms[c], p, gc)
-            near += near_end_bp(iv, chroms[c], p, gc)
+            sides = near_end_sides(iv, chroms[c], p, gc)
+            near += min(bpc, sum(sides))
+            end_chroms += max(sides) >= p.chrom_min_bp            # a terminal block at either end
             m = make_clusters(iv, p.cluster_gap)[0]
             mains[(fam, c)] = m
             if bpc >= p.chrom_min_bp:
@@ -155,10 +165,17 @@ def family_metrics(arrays: pd.DataFrame, chroms: dict, genes, p, fam_info=None, 
         vote = (subtel_vote or {}).get(fam)
         terminal = not subtel_frac < p.max_subtel_frac
         near_frac = near / bp if bp else float("nan")
-        subtelomeric = (terminal or near_frac >= p.max_subtel_frac) and 2 * vote[0] >= vote[1] if vote else terminal
+        at_ends = terminal or near_frac >= p.max_subtel_frac
+        most_ends = 2 * end_chroms > len(chroms)                 # terminal blocks on most chromosomes of this genome
+        if vote:
+            subtelomeric = at_ends and (2 * vote[0] >= vote[1] or most_ends)
+        else:
+            subtelomeric = terminal or (at_ends and most_ends)
         if subtelomeric:
+            why = (f"subtelomeric in {vote[0]}/{vote[1]} genomes" if vote and 2 * vote[0] >= vote[1] else
+                   f"terminal blocks on {end_chroms}/{len(chroms)} sequences" if most_ends else f">={p.max_subtel_frac}")
             fails.append(f"subtel_frac={subtel_frac:.2f}" + ("" if terminal else f", near ends {near_frac:.2f}")
-                         + (f", subtelomeric in {vote[0]}/{vote[1]} genomes" if vote else f">={p.max_subtel_frac}"))
+                         + f", {why}")
         if not math.isnan(gene_ratio) and gene_ratio >= p.max_gene_ratio:
             fails.append(f"gene_ratio={gene_ratio:.2f}>={p.max_gene_ratio}")
         rows.append(dict(family=fam, bp=bp, n_arrays=len(g), prevalence=prevalence, concentration=conc,

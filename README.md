@@ -101,9 +101,10 @@ one role per genome (first match wins):
 - `rDNA`: 5S rRNA (Rfam match on the consensus; `rdna=5S_rRNA`) or 45S spacer repeat (largest arrays among 45S
   rRNA genes, in this or another genome of the run; `rdna=45S_spacer`).
 - `centromeric`, `cen_associated` (most bp inside centromere calls, never the main family).
-- `subtelomeric`: most bp beyond the outermost genes or in the terminal 5% of a sequence, and so in at least half
-  of the genomes (one interior genome is not overruled; truncated assembly ends can make a centromeric array look
-  terminal).
+- `subtelomeric`: most bp beyond the outermost genes or in the terminal 5% of a sequence, and either so in at least
+  half of the genomes or in blocks at the ends of most of this genome's chromosomes. An interior genome is never
+  overruled. A family terminal in one genome on one chromosome is not enough: truncated assembly ends can make a
+  centromeric array look terminal.
 - `interstitial`: concentrated at one locus per chromosome, but not the centromere. Knobs and other heterochromatic
   blocks land here; cenrep cannot tell them apart.
 - `dispersed`: spread along the chromosomes. `minor`: < 20 kb in this genome, too little to judge.
