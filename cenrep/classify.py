@@ -62,7 +62,7 @@ def terminal_bp(iv, L: int, p, mids=None) -> int:
 
 def near_end_sides(iv, L: int, p, mids=None) -> tuple:
     """(left, right) bp of iv near each chromosome end: in the subtelomere (terminal_bp) or within the terminal end
-    zone. Gene models can reach into a subtelomere (Solanum acaule SG3 183-bp blocks, I020), so a gene-bounded array
+    zone. Gene models can reach into a subtelomere (Solanum acaule SG3 183-bp blocks), so a gene-bounded array
     this close to an end is ambiguous position evidence, not direct evidence of an interior locus."""
     z = end_zone(L, p)
     lo, hi = z, L - z
@@ -298,7 +298,7 @@ def assign_cen_associated(fams: pd.DataFrame, arrays: pd.DataFrame, regions: dic
 def assign_roles(fams: pd.DataFrame, p, borrowed: bool = False) -> pd.DataFrame:
     """One role per family in this genome (ROLES, first match wins), from the tests classify already ran:
     rDNA (5S rRNA by Rfam on the consensus, or 45S spacer: arrays among 45S rRNA genes), centromeric,
-    cen_associated (most bp inside centromere calls), subtelomeric (classify vote), interstitial (concentrated at one
+    cen_associated (most bp inside centromere calls), subtelomeric (the family_metrics verdict), interstitial (concentrated at one
     locus per chromosome, not the centromere: knobs and other heterochromatic blocks land here; cenrep cannot tell
     them apart), dispersed (spread along chromosomes), minor (< chrom_min_bp in this genome: too little to judge).
     Borrowed genomes (contigs): per-chromosome tests are meaningless, so only rDNA / centromeric / cen_associated

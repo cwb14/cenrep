@@ -1,4 +1,6 @@
-# Family roles and the all-arrays GFF (design, 2026-10-08; v0.8.6)
+# Family roles, the all-arrays GFF and LTR overlap (design, 2026-10-08/09; v0.8.6–v0.8.9)
+
+Status: current in v0.8.9.
 
 User request: report what cenrep finds along the way (rDNA, subtelomeres, knobs), and every array of every family.
 
@@ -23,8 +25,22 @@ The roles reuse the tests classify already runs; there are no new thresholds.
   The centromeric_repeat GFF is unchanged (centromeric families and arrays overlapping calls, plus monomers and HORs).
 - Log: role counts per genome.
 
+## LTR retrotransposon overlap (v0.8.8–v0.8.9)
+- With `tes/`, each family gets `in_ltr`, the share of its array bp inside clade-classified LTR retrotransposons,
+  and `ltr_clade`, the clade holding most of that overlap (columns in `satellite_families.tsv`).
+- Calls whose main family has `in_ltr` >= 0.5 are flagged `te_derived`. Calls and confidence do not change.
+- Why only a report:
+  - The *Glycine* and *Musa* failures of the held-out test (README, Validation) are tandem repeats inside
+    retrotransposon centromeres (*Musa*: a
+    62-bp repeat inside SIRE elements).
+  - On held-in data, true satellites have a median `in_ltr` of 0.06, but kb-unit arrays built from TE fragments
+    are the published centromeres of *Coffea*. No rule rejects the first without the second.
+- Elements without a clade are ignored (v0.8.9): structural detectors call kb-unit tandem arrays as LTR pairs.
+  Counting them flagged 49 *Carassius* calls on 1.6–2.0-kb families.
+
 ## Not reported
 Telomeres (period < 30 bp is outside the search), rRNA genes themselves, long-unit arrays (work/centromeres/*.longunit.tsv),
 and tandem repeats outside the <= 40 families kept per run.
 
-Versions: classify 0.9.2, centromeres 0.9.1, output 0.4.0.
+Versions: classify 0.9.2, centromeres 0.9.1, output 0.4.0 (v0.8.6); classify 0.9.4–0.9.5, centromeres 0.9.2,
+output 0.4.1 (v0.8.8–v0.8.9).

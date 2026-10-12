@@ -1,6 +1,8 @@
 # Short satellite units: significance of runs of copies (design, 2026-10-07)
 
-## Problem (issue I009)
+Status: current in v0.8.9.
+
+## Problem
 - Families with units shorter than ~60 bp were invisible to the annotation: nhmmer reported no significant hit.
   - *Avena magna* × *longiglumis*: 9 of 40 families (38–51 bp) had 0 bp annotated in every genome. Their TRF seeds
     span up to 159 Mb in one genome.
@@ -11,7 +13,7 @@
 - Cause: HMMER entropy-weights DNA models to ~0.6 bits per position. A 39-bp model scores at most ~17–19 bits.
   E ≤ 1e-5 over a 500-Mb chromosome needs ~47 bits, so no single copy can ever pass.
 - Why it matters: short centromeric satellites exist, e.g. the 41–42-bp chicken CNM repeat. Undetectable families
-  also waste slots of the 40-family cap (I003).
+  also waste slots of the 40-family cap.
 
 ## Rule: a run of copies is significant even when no copy is
 - The evidence for a satellite is the tandem array, not one copy. After one hit, a random hit starts within the
@@ -43,7 +45,7 @@
 - Chunk-overlap duplicates are removed before runs are scored, so no copy counts twice.
 
 ## Checks (not tuned)
-- Own-array recall of the batch models on 100 kb of each family's largest seed array, at chromosome-scale E,
+- Own-array recall of the family models on 100 kb of each family's largest seed array, at chromosome-scale E,
   with nhmmer time. "runs" counts runs of any hits; with whole copies only, recall is 0.70–0.97, except fam004 at
   0.00 (its 87-bp-period arrays fit the 39-bp model only partially; they were 0 before too):
   | family | unit | per hit | runs | time / 100 kb |
@@ -73,4 +75,4 @@
 - Per-family random seed for monomer sampling (`random.Random(i)`): a family's model no longer depends on how
   many hits earlier families drew.
 - Stage versions: families 0.5.0, annotate 0.5.0. `array_gap_factor` moves to the families stage fingerprint
-  (used by sampling). Every complex reruns from families in the final sweep; TRF caches stay valid.
+  (used by sampling). Existing runs rerun from the families stage; TRF caches stay valid.

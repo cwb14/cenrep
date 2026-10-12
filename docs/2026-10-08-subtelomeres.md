@@ -1,6 +1,20 @@
-# Subtelomeres and rDNA tags across genomes (design, 2026-10-08; issues I002, I016, I018)
+# Subtelomeres and rDNA tags across genomes (design, 2026-10-08)
 
-## Subtelomeric families
+## Current rule (v0.8.7–v0.8.9)
+- Each family's array bp in a genome are graded:
+  - terminal: beyond the outermost gene loci; with < 2 gene loci on a sequence, in the terminal 5%;
+  - near-end: gene-bounded, but in the terminal 5%;
+  - interior: everything else.
+- A family is subtelomeric in a genome when most of its bp there are terminal or near-end, and either:
+  - it is terminal (most bp) in at least half of the chromosome-level genomes that carry ≥ 20 kb of it; or
+  - it forms terminal blocks (≥ 20 kb at an end) on most of this genome's chromosomes.
+- An interior genome is never overruled.
+- With a single genome: terminal, or near-end with terminal blocks on most chromosomes.
+- A 45S rDNA-spacer tag found in one genome holds in all.
+
+The history below records each earlier rule and the case that replaced it.
+
+## Subtelomeric families: history
 - **v0.8.2 and earlier:** end zone = max(1 Mb, 5% of length) at each end, one-ended.
   - Chromosomes ≤ 2 Mb were all end zone (*Cryptococcus*).
   - The CENH3-bound Type II centromere of *Fragaria × ananassa* Chr1D (Jin 2025), 1.0 Mb from the end, was
@@ -8,7 +22,7 @@
 - **v0.8.3:** 5% end zone, no floor; bp counted only where a family sits at both ends of a chromosome.
   - Fixed *Fragaria* Chr1D.
   - Let one-sided subtelomeric repeats through: rice TrsC on *O. malampuzhaensis* chr06B, and *Solanum* 182-bp
-    blocks at chromosome starts (41/72 *Solanum* calls changed in a replay).
+    blocks at chromosome starts (41/72 *Solanum* calls changed when classification was rerun).
 - **v0.8.4:** the textbook subtelomere, the stretch between a chromosome end and its outermost gene.
   - A family is subtelomeric if most of its bp lies beyond the outermost gene loci (`terminal_bp`).
   - Fallback with < 2 gene loci on a sequence: the 5% end zone.
@@ -18,11 +32,11 @@
     - *Fragaria* Chr1D Type II array: 5 genes beyond it, kept.
     - TrsC: first gene at the array's end, rejected.
     - *Solanum* 182-bp blocks: 0 genes beyond, rejected.
-  - Replay (classify onward) against the batch outputs:
+  - Rerun from classification on test complexes, compared with the previous calls:
     - *O. malampuzhaensis* 1/48 calls changed (chr06B: TrsC → CentO inside the CRM peak).
     - *Fragaria* 2/84 (Chr1D gains its Type II centromere).
     - *Lemna* 2/126; *Solanum* 6/72 (was 41 with v0.8.3); *Poa* 0/28.
-  - Residual (I020): small relatives of a subtelomeric family can still be called near an end when gene models
+  - Residual: small relatives of a subtelomeric family can still be called near an end when gene models
     reach into the subtelomere (4 *S. acaule* SG3 calls, all near_end).
 - The `near_end` flag still marks calls within 5% of an end.
 - **v0.8.5: one verdict per family across the complex (vote).** A family is subtelomeric in every genome when it is
@@ -32,15 +46,15 @@
   - *Populus* clone 741 chr14A/14D/09D: the arrays end the assembled chromosome (0 genes beyond, vs 19–28 in the other
     assemblies), so the Palv78/107/156 families were subtelomeric there alone. Restored by the vote.
   - TrsC (*Oryza*) and the *Solanum* 182-bp block (6/6 genomes) stay rejected.
-  - Replay (classify onward, with I021 and I022): *Populus* 13/95 calls changed vs v0.8.4 (true families labelled),
+  - Rerun from classification (with the v0.8.5 retrotransposon changes): *Populus* 13/95 calls changed vs v0.8.4 (true families labelled),
     *O. punctata* 0/48, *O. malampuzhaensis* 1/48 and *Fragaria* 2/84 (both as v0.8.4), *Lemna* 2/126, *Poa* 0/28,
     *Solanum* 16/72 vs v0.8.2 (CENH3 within 1 Mb unchanged at 7/11).
   - Rejected alternative: pooling bp over the complex lets one large genome decide for all.
-- **v0.8.6 (I025): the vote may clear a verdict, never impose one on an interior genome.** Position evidence has three
+- **v0.8.6: the vote may clear a verdict, never impose one on an interior genome.** Position evidence has three
   grades in each genome:
   - interior (most bp neither beyond the outermost genes nor in the terminal 5%): direct evidence, never overruled;
   - near-end (gene-bounded but in the terminal 5%; `near_end_bp`): ambiguous, since gene models can reach into a
-    subtelomere (I020);
+    subtelomere;
   - terminal (beyond the outermost genes): ambiguous, since it may be a truncated assembly end.
   A near-end or terminal family is subtelomeric only if it is terminal in at least half of the genomes carrying it.
   - Why: v0.8.5 made radish CL1 (CENH3-bound; 37.6 Mb, 5% terminal in *R. sativus*) subtelomeric everywhere,
@@ -48,8 +62,8 @@
   - Pooling bp fixes RRCC (0.23) but not *Populus* Palv78 (0.88: one 2.2-Mb truncated-end array outweighs the
     interior copies). Requiring every genome to agree fails the *Solanum* 183-bp repeat, whose small interior copies
     sit in 3 genomes and whose large arrays are terminal in 3.
-  - Offline check (scratchpad i025/three_state.py): RRCC CL1 kept in radish; *Populus* clone 741 terminal-only
-    families kept; *S. acaule* SG3 183-bp near-end blocks rejected (I020, as v0.8.5); *Fragaria* Chr1D Type II
+  - Offline check on existing runs: RRCC CL1 kept in radish; *Populus* clone 741 terminal-only
+    families kept; *S. acaule* SG3 183-bp near-end blocks rejected (as in v0.8.5); *Fragaria* Chr1D Type II
     (near-end, vote 0/2) kept; TrsC and the *Solanum* 182-bp repeat rejected.
 
 ## rDNA spacer tags
@@ -63,12 +77,12 @@
 - Pooling the two-ended share over the complex fixes TrsC (two-ended in the C genomes). It does not fix
   one-sided subtelomeric repeats (*Solanum*), so the definition itself had to change.
 
-- **v0.8.7 (I026): terminal blocks on most chromosomes are subtelomeric whatever the vote.** A truncated assembly
+- **v0.8.7: terminal blocks on most chromosomes are subtelomeric whatever the vote.** A truncated assembly
   end affects one chromosome (all *Populus* cases: 1 end each); a subtelomeric family sits at the ends of most.
   - *M. sookensis* G: a 687-bp satellite, a ~0.11-Mb interstitial block in both progenitors and the N subgenome,
     forms 5.6 Mb of terminal blocks on 10/14 G chromosomes while Cent728 holds the centres. v0.8.6 called it
     centromeric on 3 chromosome ends (terminal in 1/4 genomes, so the vote cleared it).
-  - Batch scan (33 non-held-out complexes; scratchpad i026/scan.py): 83 family × genome verdicts change; only
+  - Scan of 33 test complexes: 83 family × genome verdicts change; only
     this family was centromeric. The others are the known subtelomeric satellites of each lineage (by length):
     *Brassica*/*Raphanus* CL25-like ~350 bp, Triticeae/*Avena*/*Poa* pSc119.2-like 118–120 bp, *Nicotiana*
     HRS60-like 180 bp, *Solanum* 182 bp.

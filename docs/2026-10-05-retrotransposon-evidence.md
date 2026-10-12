@@ -1,10 +1,13 @@
 # Retrotransposon evidence for centromere calls (design, 2026-10-05)
 
+Status: current in v0.8.9. Later changes are folded in: element floor 5 and sequence-based kinds (v0.8.5), LTR
+overlap reporting (v0.8.8–v0.8.9, docs/2026-10-08-family-roles.md).
+
 ## Why
 - Many centromeres are not satellite-based: Triticeae and *Avena* (CRW/Cereba CRM elements), *Musa* (Nanica LINE +
   CRM), perennial *Glycine*, most *Nicotiana* centromeres, half of potato's, *Cryptococcus* (Tcn elements).
 - On such genomes cenrep v0.5 still calls the largest eligible satellite cluster. In *Aegilops ventricosa*, 27 of 28
-  calls sit on interstitial satellite blocks 22–409 Mb from the centromere, mostly at high/medium confidence (I005).
+  calls sit on interstitial satellite blocks 22–409 Mb from the centromere, mostly at high/medium confidence.
 - Centromeric retrotransposons concentrate at one locus per chromosome, and the clade differs by lineage (Athila in
   *A. thaliana*, CRM in grasses, Ale/CRM in *Brassica*). Discovered per genome, the most concentrated clade's peak
   agrees with validated satellite calls (*A. thaliana* Col-CEN within 0.2–0.9 Mb, *B. rapa* within 0–1.8 Mb,
@@ -43,7 +46,7 @@ Without the file, cenrep is a satellite-only tool and the honesty rule below app
 5. **Satellite families on trial (classify, decisive evidence only).**
    - Centromeric family kinds are tested: sequence-related families (same superfamily at ≥ 70% identity, or one
      chain of close subfamilies: CentBr1/2, CentO 155/165) count together, so a subfamily on a few chromosomes is
-     not rejected alone. v0.8.5 (I021): period alone no longer makes families kin. Before, the *Populus* 148-bp
+     not rejected alone. v0.8.5: period alone no longer makes families kin. Before, the *Populus* 148-bp
      knob repeat (no sequence similarity) was chained with the 144/156-bp centromeric satellites, and its
      rejection took them along.
    - A chromosome agrees if any member's main cluster agrees with its core. A kind whose clusters disagree on the
@@ -69,21 +72,21 @@ Without the file, cenrep is a satellite-only tool and the honesty rule below app
 - GFF centromere attributes: `te_clade`, `te_core`.
 - Family table: `dominant` column (classify); rule-5 rejections appear as ineligible, class `other`, with their reason.
 
-## Versions
+## Versions (when introduced)
 classify (dominant column) and centromeres (rules 1–7) change → STAGE_VERSION 0.6.0 for both; rerun from classify.
 
 ## Validation (sanity, not tuning)
 - Synthetic: TE cluster at the satellite centromere (concordant); TE cluster elsewhere (family rejected, TE call
   made); uniformly spread clade (no evidence).
 - Real data:
-  - allo10 *A. thaliana* Col-CEN, *O. minuta*, *B. rapa*: satellite calls stay, concordant.
+  - An earlier test set (*A. thaliana* Col-CEN, *O. minuta*, *B. rapa*): satellite calls stay, concordant.
   - *Aegilops ventricosa*: interstitial families rejected.
   - *Ae. geniculata*: calls checked against the published CENH3 ChIP peaks on the same assembly (Yunusbaev 2026).
 
-## Real-data replay (classify + calls on existing arrays; rDNA flank test and long-unit scan skipped)
+## Real-data check (classification and calls rerun on existing arrays; rDNA flank test and long-unit scan skipped)
 | genome | marker | outcome |
 |---|---|---|
-| allo10 *A. suecica* complex (Col-CEN *A. thaliana*) | Athila (flags) | unchanged: CEN180/pAa calls all kept |
+| *A. suecica* complex, earlier test set (Col-CEN *A. thaliana*) | Athila (flags) | unchanged: CEN180/pAa calls all kept |
 | *O. minuta* B / C, *O. officinalis* C, *O. punctata* B | none / CRM | unchanged; the satellite-free C-genome CEN2 gets a retrotransposon call |
 | *B. rapa* A | CRM | unchanged: 10/10 high |
 | *B. juncea* A | Retand (flags) | CentBr kept |

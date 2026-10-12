@@ -60,7 +60,7 @@ Without retrotransposon input, a genome with no dominant satellite has every cal
 mamba env create -f environment.yml      # python, pyhmmer, pysam, pandas, matplotlib, TRF, BLAST+, MAFFT,
 mamba activate cenrep                    # cd-hit, Infernal, minimap2, samtools
 pip install .                            # provides the `cenrep` command
-pytest -q                                # optional: about 150 tests on small synthetic genomes, ~3 min
+pytest -q                                # optional: about 160 tests on small synthetic genomes, ~3 min
 ```
 
 ## Run
@@ -75,8 +75,8 @@ cenrep run my_complex/ -t 16             # outputs in my_complex/centromere/
 | file | required | content |
 |---|---|---|
 | `<genome>.fa` / `.fasta` / `.fna` (`.gz` bgzip) + `.fai` | yes | one FASTA per genome, chromosome-level (≤ 50 sequences) |
-| `genes/<genome>.gff3[.gz]` | no | `gene` lines (protein-coding only, if gene types are given); used to veto gene-rich candidates |
-| `tes/<genome>.gff3[.gz]` | no | LTR retrotransposons (type containing `LTR_retrotransposon`) with a `clade=` attribute, e.g. from LTRquest, or EDTA + TEsorter |
+| `genes/<genome>.gff3[.gz]` | no | `gene` lines (protein-coding only, if gene types are given); used to veto gene-rich candidates and to define subtelomeres (beyond the outermost gene) |
+| `tes/<genome>.gff3[.gz]` | no | LTR retrotransposons (type containing `LTR_retrotransposon`) with a `clade=` attribute, e.g. from LTRquest, or EDTA + TEsorter; used for the marker clade and for `in_ltr` |
 
 Options: `-o` output dir, `-t` threads, `--trf-cache` a cache shared between runs, `--classify-from T=S` (a contig
 assembly T takes its centromeric families from chromosome-level genome S), `--force STAGE` (recompute from a stage),
@@ -91,7 +91,7 @@ assembly T takes its centromeric families from chromosome-level genome S), `--fo
 | `<genome>_centromere_summary.tsv` | one row per chromosome: call coordinates, evidence, confidence, flags, main family, satellite bp, HOR fraction, gaps, genes, retrotransposon clade and core |
 | `<genome>_hor_units.tsv` | HOR units: monomer composition, copies, tandem runs |
 | `<genome>_satellite_arrays.gff` | GFF3: every array of every family, on every sequence (e.g. ~21,000 in *Poa annua* A): `family` (as in `satellite_families.tsv`), `role`, `rdna` where tagged, monomer length and count, identity, `in_centromere` |
-| `satellite_families.tsv/.fa/.hmm` | every family: class and role per genome, reason, consensus, HMM |
+| `satellite_families.tsv/.fa/.hmm` | every family: class, role and (with `tes/`) `in_ltr` / `ltr_clade` per genome, reason, consensus, HMM |
 | `centromere_overview.pdf` | one panel per genome, one track per chromosome |
 
 **Family roles.** The tests that decide what is centromeric also say what the other families are. Each family gets
@@ -152,6 +152,17 @@ called (1,771 satellite, 301 retrotransposon, 97 long-unit tandem; 162 `none`).
     centromeres is reported as the satellite. The location agrees with the CRM core; the calls are flagged
     `te_derived`.
 
+## Design notes
+
+The reasoning behind the rules, with the cases that motivated them, is in `docs/`:
+- `2026-10-05-retrotransposon-evidence.md`: marker clade, CRM decisiveness, rejecting and moving satellite calls.
+- `2026-10-07-short-units.md`: runs of copies for units shorter than ~60 bp.
+- `2026-10-08-subtelomeres.md`: subtelomeric families across genomes; rDNA tags.
+- `2026-10-08-family-roles.md`: family roles, the all-arrays GFF, LTR overlap (`in_ltr`, `te_derived`).
+- `literature_cen_satellites.md`: published centromeric satellites used as known answers.
+
+Every threshold is in `cenrep/params.py` with a one-line reason.
+
 ## Limitations
 
 - Units < 30 bp (*Drosophila*) and > 30 kb are outside the search. Units of 30–60 bp are found as runs of copies.
@@ -164,20 +175,21 @@ called (1,771 satellite, 301 retrotransposon, 97 long-unit tandem; 162 `none`).
 - At most 40 families per run, the largest. Satellite-rich genomes (oat, wheat relatives) drop hundreds of small
   families; the centromeric ones tested so far were kept.
 - Solanaceae: short (150–190-bp) satellites are often pericentromeric, while centromeres are kb-unit arrays or
-  satellite-free. CENH3 ChIP on *S. verrucosum* (same assembly) puts calls within 1 Mb on 7/11 chromosomes but
-  2–10 Mb off on 4, some at high confidence.
+  satellite-free. CENH3 ChIP on *S. verrucosum* (same assembly): of 11 called chromosomes, 7 are within 1 Mb of
+  CENH3 and 4 are 2–10 Mb off, some at high confidence.
 - Under-assembled centromeres give short calls. Lengths reflect the assembly.
 - In large grass genomes, a satellite array at the edge of a wide CRM core (8–19 Mb in *Aegilops*) is accepted and
-  can be 3–11 Mb from CENH3 (3/15 *Ae. geniculata* domains). The tolerance stays because CRM elements flank, rather
+  can be 2–11 Mb from CENH3 (4/14 *Ae. geniculata* chromosomes). The tolerance stays because CRM elements flank, rather
   than fill, true satellite centromeres (rice CRR beside CentO): requiring overlap would move CentO calls off
   their arrays.
 - Without CRM, retrotransposon evidence only flags. Where the assembly lacks a chromosome's centromeric array, a
   non-centromeric satellite elsewhere on it can be called at high confidence (`te_discordant`; *B. napus* A06/A09
   on an AT-rich 156-bp repeat). Calls are not yet checked for consistent position between homologous genomes.
 - Chromosome ends: a family is subtelomeric when most of it lies beyond the outermost genes (needs `genes/`; else
-  the terminal 5% of each sequence). An acrocentric centromere next to an end is kept but flagged `near_end`
-  (*Fragaria* Chr1D, CENH3-bound, 1.0 Mb from the end). Gene models reaching into a subtelomere can let a small
-  subtelomeric family through (flagged `near_end`).
+  the terminal 5% of each sequence), judged across genomes (see Family roles). An acrocentric centromere next to an
+  end is kept but flagged `near_end` (*Fragaria* Chr1D, CENH3-bound, 1.0 Mb from the end). Gene models reaching
+  into a subtelomere can still let a subtelomeric family through when no genome has it beyond the outermost gene
+  (flagged `near_end`).
   Interstitial blocks a few hundred kb from an end, with genes beyond them, are not subtelomeric by this rule
   and can be called (*B. rapa* Chiifu v3: CL25-like AT-rich 330–350-bp repeat; `near_end`, often `gene_rich`).
 - Tandem repeats that are part of retrotransposons, or derived from them, are reported as satellites. In

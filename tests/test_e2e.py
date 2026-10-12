@@ -168,5 +168,5 @@ def test_cli_needs_a_genome_dir_and_fails_clearly(tmp_path):
     assert run().returncode == 2
     r = run(str(tmp_path / "empty"))
     assert r.returncode == 1 and "no *.fa genomes" in r.stderr
-    r = run("--complex-dir", str(tmp_path / "empty"))                      # batch-driver alias
+    r = run("--complex-dir", str(tmp_path / "empty"))                      # hidden alias of GENOME_DIR
     assert r.returncode == 1 and "no *.fa genomes" in r.stderr

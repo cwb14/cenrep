@@ -113,7 +113,7 @@ def _related(a, b, seqs, pairs, t_same, t_multi) -> bool:
     """Candidate a vs representative b. The lenient multimer identity (t_multi) applies only when a is the
     longer (a multimer joining a monomer representative). A monomer joining a multimer representative must
     meet t_same: TRF often calls the largest array at a multimer period, and at t_multi a related but distinct
-    subfamily (CentBd/CentBs, CEN180/pAa) would join it depending on seed order (review C1)."""
+    subfamily (CentBd/CentBs, CEN180/pAa) would join it depending on seed order."""
     la, lb = len(seqs[a]), len(seqs[b])
     if la <= lb:
         return seed_match(la, lb, pairs.get((a, b), []), t_same, t_same)
@@ -187,7 +187,7 @@ def absorb_multimers(cons: dict, workdir: Path, threads: int, ident: float) -> d
 def rdna_tags(cons: dict, workdir: Path, threads: int, cm=RRNA_CM, evalue: float = RDNA_TAG_EVALUE) -> dict:
     """Tag families whose consensus (searched as a dimer, so a gene spanning the rotation point is found)
     contains an rRNA gene (Rfam 5S/5.8S/SSU/LSU, cmsearch). rDNA arrays (e.g. pericentromeric 5S rDNA)
-    look like satellites but are never centromeric (review C2). Returns {fam: rRNA model name or '.'}."""
+    look like satellites but are never centromeric. Returns {fam: rRNA model name or '.'}."""
     tags = {f: "." for f in cons}
     if not cons:
         return tags

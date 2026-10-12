@@ -3,8 +3,8 @@
 None of them is a command-line option: a user should not have to tune 51 numbers, and a value tuned to one dataset
 does not travel. `Params` holds the stage-fingerprinted values; checkpoints (work/<stage>.done) are keyed by its
 field names, so a field is renamed only together with a stage-version bump. Values that express one concept share
-one named constant. 'prior' marks an absolute size with no data-derived rule yet (planned rules:
-docs/2026-10-05-parameter-audit.md). Plot layout and lock polling constants live with their modules."""
+one named constant. 'prior' marks an absolute size with no data-derived rule yet. Plot layout and lock polling
+constants live with their modules."""
 from dataclasses import asdict, dataclass
 
 from .util import CenrepError
@@ -131,8 +131,8 @@ REASON = {
     "chrom_min_bp": "prior: min family bp on a chromosome / min main cluster (bp) = S_MIN",
     "cluster_gap": "prior: arrays closer than this form one cluster; also the co-centromeric distance (bp)",
     "min_concentration": "the main cluster holds the majority of a chromosome's family bp (median over chromosomes)",
-    "max_subtel_frac": "a family with the majority of its bp beyond the outermost genes (subtelomeres) is subtelomeric",
-    "subtel_frac_len": "end zone (near_end flag; subtelomere when a sequence has < 2 gene loci), fraction of length",
+    "max_subtel_frac": "majority share: of a family's bp beyond the outermost genes (terminal) or near ends, and of genomes in the subtelomeric vote",
+    "subtel_frac_len": "end zone (near_end flag; near-end grade; subtelomere when a sequence has < 2 gene loci), fraction of length",
     "max_gene_ratio": "centromeres are gene-poor: main clusters at >= half the genome's gene density are not centromeric",
     "strong_prevalence": "'strong' and dominant families are centromeric on the majority of chromosomes",
     "strong_cluster_bp": "prior: min median main-cluster bp for 'strong' evidence = 5 x S_MIN",

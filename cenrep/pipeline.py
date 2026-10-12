@@ -196,9 +196,11 @@ class Pipeline:
                                      self._p("annotate", f"{g.name}.arrays.tsv"), groups)
 
     def stage_classify(self):
-        """Family character is judged over the complex (one family = one sequence): subtelomeric when so in at least
-        half of the chromosome-level genomes that carry it; an rDNA-spacer tag in one genome holds in all (rRNA genes
-        are often missing from an assembly, so their absence next to the arrays is weak evidence)."""
+        """Family character is judged over the complex (one family = one sequence): the subtelomeric vote counts the
+        chromosome-level genomes where a family is terminal (classify.family_metrics: an interior genome is never
+        overruled; terminal blocks on most chromosomes of a genome decide there); an rDNA-spacer tag in one genome
+        holds in all (rRNA genes are often missing from an assembly, so their absence next to the arrays is weak
+        evidence). With tes/, each family's share of array bp inside LTR retrotransposons is recorded (in_ltr)."""
         info = self.fam_info()
         vote = {}                                         # subtelomeric votes over the chromosome-level genomes
         for g in self.genomes:
