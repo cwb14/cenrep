@@ -1,7 +1,5 @@
 # cenrep
 
-> Draft (2026-10-06): validation numbers will be updated after the final release of the current batch.
-
 Finds the centromeric satellite DNA of a set of related genomes de novo, and calls one centromere per chromosome
 with the evidence behind it and a confidence level. You need no known monomer, no repeat library and no species
 knowledge. Optional evidence from gene annotation and from LTR retrotransposons makes the calls more reliable.
@@ -123,17 +121,36 @@ has most of its array bp inside clade-classified LTR retrotransposons; needs `te
 
 ## Validation
 
+Results of v0.8.9 on 185 genomes from 38 polyploid complexes (plants, fish, fungi): 93% of 2,331 chromosomes
+called (1,771 satellite, 301 retrotransposon, 97 long-unit tandem; 162 `none`).
+
 - **Synthetic genomes** with planted satellites, HORs, a decoy, a gap, a long-unit array and a satellite-free
-  chromosome are run by the test suite.
-- **Literature known answers.** Reproduced:
-  - *A. thaliana* CEN180 on Col-CEN: 67,241 monomers, against 66,131 in Naish et al. 2021 (v0.3.7).
-  - pAa (*A. arenosa*), CentBr (*Brassica* A), CentO (*Oryza* B), CentBd/CentBs (*Brachypodium*) and Cent728
-    (*Mimulus*) on every chromosome.
-  - Correct negatives: the satellite-free *Brassica* B genome and *Oryza* C CEN2.
-- **CENH3 ChIP-seq**, the direct test, on *Aegilops geniculata* (Yunusbaev et al. 2026, same assembly):
-  - The CRM core overlaps the CENH3 peak on 14/14 chromosomes.
-  - Calls overlap on 10/14 (v0.7.0 rules replayed on the v0.6.2 run; full rerun pending); the other 4 sit on
-    satellite arrays 2–11 Mb away, inside wide CRM cores.
+  chromosome are run by the test suite (164 tests).
+- **CENH3 data**, the direct test:
+  - *Aegilops geniculata* (CENH3 ChIP-seq peaks, Yunusbaev et al. 2026, same assembly): calls overlap the CENH3
+    domain on 10/14 chromosomes. The other 4 sit on satellite arrays 2–11 Mb away, inside wide CRM cores.
+  - *Solanum verrucosum* (Zhang et al. 2014 CENH3 ChIP reads, mapped to the same assembly): 11/12 chromosomes
+    called, 7/12 within 1 Mb of the CENH3 domain. Its short satellites are mostly pericentromeric (see
+    Limitations).
+  - *Fragaria × ananassa* (CENH3 ChIP, Jin et al. 2025): 28/28 centromeres on the published satellite type,
+    including the Type II (Chr1D) and Type III (Chr1C) exceptions.
+  - *Brachypodium* (Chen et al. 2024, same assemblies): CentBd/CentBs found and kept apart by subgenome; monomer
+    counts within 2% of the published ones (*B. hybridum* D 18,100 vs 17,838; S 87,200 vs 86,896).
+  - *Nicotiana tabacum*: 44/48 chromosomes placed by CENH3 ChIP-clone clusters or by CENH3/Hi-C centromere windows
+    transferred from a near-T2T *N. sylvestris* assembly.
+- **Literature known answers**, recovered on every or nearly every chromosome: CEN180 (*A. thaliana*), pAa
+  (*A. arenosa*), CentBr (*Brassica* A/C), CL1 (radish), CentO and CentO-C (*Oryza*), Cent728 (*Mimulus*),
+  the 166-bp *Prunus* satellite, the *Carassius* centromere probe.
+  - *A. thaliana* CEN180 on Col-CEN: 67,241 monomers vs 66,131 in Naish et al. 2021 (v0.3.7).
+  - Correct negatives: the satellite-free *Brassica* B genomes, oat A/D (CRM centromeres), mosses (*Sphagnum*,
+    Copia centromeres), *Cryptococcus* (`none`).
+- **Held-out test** (5 complexes; pass/fail criteria written before they were run, outputs unseen while the code
+  changed):
+  - *Saccharum* (SCEN, positive): pass, 36/36 chromosomes, all high confidence.
+  - *Magallana* (no uniform centromere sequence): pass.
+  - *Glycine* and *Musa* (CENH3/FISH: no centromeric satellite): fail. A tandem repeat inside the retrotransposon
+    centromeres is reported as the satellite. The location agrees with the CRM core; the calls are flagged
+    `te_derived`.
 
 ## Limitations
 
