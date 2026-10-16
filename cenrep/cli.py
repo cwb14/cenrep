@@ -1,5 +1,5 @@
-"""Command line: cenrep run GENOME_DIR [-o OUTDIR] [-t THREADS] [--trf-cache DIR] [--classify-from T=S] [--force STAGE]
-[-v]. Every threshold is an internal constant (params.py); none is an option."""
+"""Command line: cenrep run GENOME_DIR [-o OUTDIR] [-t THREADS] [--seed-engine {fastan,trf}] [--seed-cache DIR]
+[--classify-from T=S] [--force STAGE] [-v]. Every threshold is an internal constant (params.py); none is an option."""
 import argparse
 from pathlib import Path
 
@@ -10,6 +10,7 @@ from .util import CenrepError, log, setup_logging
 
 def main(argv=None) -> int:
     from .pipeline import STAGES, Pipeline
+    from .seeds import ENGINES
     ap = argparse.ArgumentParser(prog="cenrep", description=(
         "Centromeric satellite, HOR and tandem-repeat annotation. Finds satellite families de novo, shared across "
         "all genomes in GENOME_DIR, and calls one centromere per chromosome with its evidence and confidence."))
@@ -24,7 +25,11 @@ def main(argv=None) -> int:
     r.add_argument("--complex-dir", dest="complex_dir", type=Path, help=argparse.SUPPRESS)   # alias of GENOME_DIR
     r.add_argument("-o", "--outdir", type=Path, help="output dir [GENOME_DIR/centromere]")
     r.add_argument("-t", "--threads", type=int, default=8, help="threads [8]")
-    r.add_argument("--trf-cache", type=Path, metavar="DIR", help="TRF result cache, shareable between runs [OUTDIR/work/trf_cache]")
+    r.add_argument("--seed-engine", choices=list(ENGINES), default=Params.seed_engine,
+                   help="tandem-repeat finder for the family seeds [fastan]")
+    r.add_argument("--seed-cache", type=Path, metavar="DIR",
+                   help="seed result cache, shareable between runs [OUTDIR/work/seed_cache, or trf_cache if present]")
+    r.add_argument("--trf-cache", dest="seed_cache", type=Path, help=argparse.SUPPRESS)    # alias of --seed-cache
     r.add_argument("--classify-from", default="", metavar="T=S[+S2],...",
                    help="genome T (e.g. a contig assembly) takes the centromeric families of genome(s) S")
     r.add_argument("--force", choices=STAGES, help="recompute this stage and all later ones")
@@ -35,8 +40,8 @@ def main(argv=None) -> int:
         ap.error("give one GENOME_DIR")
     setup_logging(a.verbose)
     try:
-        Pipeline(gdir, a.threads, a.trf_cache, Params(classify_from=a.classify_from), force=a.force,
-                 out_dir=a.outdir).run()
+        Pipeline(gdir, a.threads, a.seed_cache, Params(seed_engine=a.seed_engine, classify_from=a.classify_from),
+                 force=a.force, out_dir=a.outdir).run()
     except CenrepError as e:
         log.error(str(e))
         return 1

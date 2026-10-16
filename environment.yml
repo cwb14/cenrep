@@ -8,8 +8,11 @@ dependencies:
   - pysam
   - pyhmmer>=0.12
   - matplotlib
+  - pyabpoa=1.5.7
   - pytest
-  - trf=4.10.0rc2
+  - fastan=0.8                # default seed engine (FasTAN); fastga gives FAtoGDB, ONEview
+  - fastga=1.5.20260729
+  - trf=4.10.0rc2             # alternative seed engine (--seed-engine trf)
   - blast>=2.16
   - mafft=7.525
   - cd-hit=4.8.1

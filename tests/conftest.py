@@ -6,7 +6,7 @@ from cenrep.params import Params
 from synth import build_complex
 
 TEST_PARAMS = dict(
-    trf_chunk=150_000, trf_overlap=5_000, min_fam_span=5_000, hmm_sample=100, hmm_sample_bp=100_000,
+    seed_chunk=150_000, seed_overlap=5_000, min_fam_span=5_000, hmm_sample=100, hmm_sample_bp=100_000,
     chrom_min_bp=5_000, cluster_gap=50_000, strong_cluster_bp=20_000,
     low_sat_bp=10_000, fallback_min_bp=2_000, lu_flank=20_000, lu_window=100_000, lu_window_overlap=20_000,
 )
@@ -29,28 +29,37 @@ def synth_complex(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def synth_trf_cache(synth_complex, test_params, tmp_path_factory):
+def synth_seed_cache(synth_complex, test_params, tmp_path_factory):
     from cenrep.genomes import discover_genomes
-    from cenrep.trf import trf_genomes
-    cache = tmp_path_factory.mktemp("trfcache")
-    trf_genomes(discover_genomes(synth_complex[0]), cache, 4, test_params)
+    from cenrep.seeds import seed_genomes
+    cache = tmp_path_factory.mktemp("seedcache")
+    seed_genomes(discover_genomes(synth_complex[0]), cache, 4, test_params)
     return cache
 
 
-@pytest.fixture(scope="session")
-def synth_trf(synth_complex, synth_trf_cache, test_params):
+def _load(cdir, cache, p):
     from cenrep.genomes import discover_genomes
-    from cenrep.trf import load_trf, trf_genomes
-    paths = trf_genomes(discover_genomes(synth_complex[0]), synth_trf_cache, 4, test_params)
-    return {g: load_trf(p) for g, p in paths.items()}
+    from cenrep.seeds import load_seeds, seed_genomes
+    return {g: load_seeds(path) for g, path in seed_genomes(discover_genomes(cdir), cache, 4, p).items()}
 
 
 @pytest.fixture(scope="session")
-def synth_families(synth_complex, synth_trf, test_params, tmp_path_factory):
+def synth_seeds(synth_complex, synth_seed_cache, test_params):
+    """Seeds of the default engine (FasTAN)."""
+    return _load(synth_complex[0], synth_seed_cache, test_params)
+
+
+@pytest.fixture(scope="session")
+def synth_trf(synth_complex, test_params, tmp_path_factory):
+    return _load(synth_complex[0], tmp_path_factory.mktemp("trfcache"), Params(**dict(TEST_PARAMS, seed_engine="trf")))
+
+
+@pytest.fixture(scope="session")
+def synth_families(synth_complex, synth_seeds, test_params, tmp_path_factory):
     from cenrep.families import build_families
     from cenrep.genomes import discover_genomes
     wd = tmp_path_factory.mktemp("families")
-    fam = build_families(synth_trf, discover_genomes(synth_complex[0]), wd, 4, test_params)
+    fam = build_families(synth_seeds, discover_genomes(synth_complex[0]), wd, 4, test_params)
     return fam, wd
 
 

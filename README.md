@@ -9,8 +9,10 @@ namespace), but it works on any set of chromosome-level genomes, or on a single 
 
 ## What it does
 
-1. **Tandem repeats.** TRF scans every chromosome in chunks. Results are cached by file checksum, so a genome shared
-   by several runs is scanned once.
+1. **Tandem repeats.** FasTAN (default) or TRF scans every chromosome in 5-Mb chunks. FasTAN reports each array's
+   interval, unit length and the cuts between copies, but no unit sequence; cenrep takes the consensus of up to 30
+   copies by partial-order alignment (abPOA). Results are cached by file checksum, so a genome shared by several
+   runs is scanned once.
 2. **Satellite families.** Tandem arrays of ≥ 2 kb are clustered into families shared by all genomes:
    - 90% identity within a family; multimers are folded into their monomer.
    - Each family gets a profile HMM built from sampled copies, founded on one whole monomer.
@@ -57,10 +59,10 @@ Without retrotransposon input, a genome with no dominant satellite has every cal
 ## Install
 
 ```bash
-mamba env create -f environment.yml      # python, pyhmmer, pysam, pandas, matplotlib, TRF, BLAST+, MAFFT,
-mamba activate cenrep                    # cd-hit, Infernal, minimap2, samtools
+mamba env create -f environment.yml      # python, pyhmmer, pyabpoa, pysam, pandas, matplotlib, FasTAN, FASTGA,
+mamba activate cenrep                    # TRF, BLAST+, MAFFT, cd-hit, Infernal, minimap2, samtools
 pip install .                            # provides the `cenrep` command
-pytest -q                                # optional: about 160 tests on small synthetic genomes, ~3 min
+pytest -q                                # optional: about 185 tests on small synthetic genomes, ~3 min
 ```
 
 ## Run
@@ -78,16 +80,17 @@ cenrep run my_complex/ -t 16             # outputs in my_complex/centromere/
 | `genes/<genome>.gff3[.gz]` | no | `gene` lines (protein-coding only, if gene types are given); used to veto gene-rich candidates and to define subtelomeres (beyond the outermost gene) |
 | `tes/<genome>.gff3[.gz]` | no | LTR retrotransposons (type containing `LTR_retrotransposon`) with a `clade=` attribute, e.g. from LTRquest, or EDTA + TEsorter; used for the marker clade and for `in_ltr` |
 
-Options: `-o` output dir, `-t` threads, `--trf-cache` a cache shared between runs, `--classify-from T=S` (a contig
-assembly T takes its centromeric families from chromosome-level genome S), `--force STAGE` (recompute from a stage),
-`-v`. A rerun resumes from the last finished stage. Every threshold is an internal constant, with its reason, in
+Options: `-o` output dir, `-t` threads, `--seed-engine` the tandem-repeat finder (`fastan`, the default, or `trf`),
+`--seed-cache` a cache shared between runs, `--classify-from T=S` (a contig assembly T takes its centromeric families
+from chromosome-level genome S), `--force STAGE` (recompute from a stage), `-v`. A rerun resumes from the last
+finished stage; the two engines never share checkpoints. Every threshold is an internal constant, with its reason, in
 `cenrep/params.py`.
 
 ## Outputs (`<outdir>/`)
 
 | file | content |
 |---|---|
-| `<genome>_centromeric_repeat.gff` | GFF3: `centromere` (one per called chromosome), `satellite_DNA` arrays, `satellite_monomer`, `higher_order_repeat`, other `tandem_repeat`s inside the centromere |
+| `<genome>_centromeric_repeat.gff` | GFF3: `centromere` (one per called chromosome), `satellite_DNA` arrays, `satellite_monomer`, `higher_order_repeat`, other `tandem_repeat`s inside the centromere (`unit_source`: `fastan` or `trf`, the seed engine; `selfaln`, units > 2 kb) |
 | `<genome>_centromere_summary.tsv` | one row per chromosome: call coordinates, evidence, confidence, flags, main family, satellite bp, HOR fraction, gaps, genes, retrotransposon clade and core |
 | `<genome>_hor_units.tsv` | HOR units: monomer composition, copies, tandem runs |
 | `<genome>_satellite_arrays.gff` | GFF3: every array of every family, on every sequence (e.g. ~21,000 in *Poa annua* A): `family` (as in `satellite_families.tsv`), `role`, `rdna` where tagged, monomer length and count, identity, `in_centromere` |
@@ -121,11 +124,17 @@ has most of its array bp inside clade-classified LTR retrotransposons; needs `te
 
 ## Validation
 
-Results of v0.8.9 on 185 genomes from 38 polyploid complexes (plants, fish, fungi): 93% of 2,331 chromosomes
-called (1,771 satellite, 301 retrotransposon, 97 long-unit tandem; 162 `none`).
+Results of v0.8.9 (TRF seeds) on 185 genomes from 38 polyploid complexes (plants, fish, fungi): 93% of 2,331
+chromosomes called (1,771 satellite, 301 retrotransposon, 97 long-unit tandem; 162 `none`). The FasTAN default
+(v0.9.0) was compared with these outputs on the five smallest complexes (below).
 
 - **Synthetic genomes** with planted satellites, HORs, a decoy, a gap, a long-unit array and a satellite-free
-  chromosome are run by the test suite (164 tests).
+  chromosome are run by the test suite (187 tests), with both seed engines.
+- **FasTAN vs TRF seeds** (v0.9.0 vs the v0.8.9 batch, 4 smallest complexes, 86 called sequences): same evidence on
+  84, same confidence on 83, all calls overlap (median Jaccard 1.0); seed stage 20–30 s vs 4.0–5.2 min where TRF
+  scanned every genome (6 vs 3 s on the 74-Mb *Cryptococcus*). pAa copies within
+  0.1%; *Brachypodium* CentBs/CentBd copies within 0.7/2.0% of Chen 2024, but CentBd splits into 3 subfamilies.
+  Details and the differences: `docs/2026-10-16-fastan-seeds.md`.
 - **CENH3 data**, the direct test:
   - *Aegilops geniculata* (CENH3 ChIP-seq peaks, Yunusbaev et al. 2026, same assembly): calls overlap the CENH3
     domain on 10/14 chromosomes. The other 4 sit on satellite arrays 2–11 Mb away, inside wide CRM cores.
@@ -159,6 +168,7 @@ The reasoning behind the rules, with the cases that motivated them, is in `docs/
 - `2026-10-07-short-units.md`: runs of copies for units shorter than ~60 bp.
 - `2026-10-08-subtelomeres.md`: subtelomeric families across genomes; rDNA tags.
 - `2026-10-08-family-roles.md`: family roles, the all-arrays GFF, LTR overlap (`in_ltr`, `te_derived`).
+- `2026-10-16-fastan-seeds.md`: FasTAN seed engine, unit consensus, FasTAN 0.8 end correction, benchmark vs TRF.
 - `literature_cen_satellites.md`: published centromeric satellites used as known answers.
 
 Every threshold is in `cenrep/params.py` with a one-line reason.
@@ -167,6 +177,11 @@ Every threshold is in `cenrep/params.py` with a one-line reason.
 
 - Units < 30 bp (*Drosophila*) and > 30 kb are outside the search. Units of 30–60 bp are found as runs of copies.
   Arrays of a composite unit (two different short units in tandem, e.g. 48 + 39 bp) are described by the composite.
+- FasTAN seeds need adjacent copies ≥ ~70% identical; more divergent arrays seed no family (*A. arenosa*: 4 of 768
+  TRF seeds, all 71–74% identical). `--seed-engine trf` searches them. The FasTAN 0.8 release (bioconda) ends every
+  array one copy early; cenrep detects this at start-up and adds the copy.
+- `tandem_repeat` features from FasTAN: its shortest unit is 2 bp, so homopolymer runs appear with 2–6-bp periods,
+  and one array can appear as a few abutting features (FasTAN splits long arrays).
 - Non-tandem centromeres are reported as `none` (no retrotransposon input) or by their retrotransposon core.
 - Without retrotransposon input, a dominant but non-centromeric satellite is called centromeric (oat: the 335–360-bp
   family on every chromosome). The `no_dominant_satellite` cap catches only genomes where no family dominates; give

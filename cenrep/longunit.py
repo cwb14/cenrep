@@ -1,4 +1,4 @@
-"""S5b: tandem arrays with units > 2 kb (beyond TRF's MaxPeriod), from windowed minimap2 self-alignment.
+"""S5b: tandem arrays with units > 2 kb (beyond the seeds' SEED_MAX_PERIOD), from windowed minimap2 self-alignment.
 A tandem array of unit d self-aligns with a shift of d; an alignment at least d long means >= 2 adjacent copies."""
 import os
 import tempfile
@@ -25,7 +25,7 @@ def windows(start: int, end: int, size: int, overlap: int):
 
 
 def build_masks(frames) -> dict:
-    """Merged intervals to N-mask (satellite arrays, TRF rows): {chrom: (starts, ends)}."""
+    """Merged intervals to N-mask (satellite arrays, seed rows): {chrom: (starts, ends)}."""
     iv = {}
     for df in frames:
         for c, s, e in zip(df.chrom, df.start, df.end):

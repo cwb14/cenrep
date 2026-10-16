@@ -10,22 +10,28 @@ from dataclasses import asdict, dataclass
 from .util import CenrepError
 
 # ---- shared values: one concept, one number
-TRF_MAX_PERIOD = 2000          # TRF's maximum period; longer units are left to the long-unit detector
-FAMILY_IDENT = 0.90            # same satellite family: TRF consensuses are near-homogeneous, 90% splits variants >10% apart
+SEED_MAX_PERIOD = 2000         # longest seed unit = TRF's maximum period (FasTAN's longer units are dropped); longer
+                               # units are left to the long-unit detector
+FAMILY_IDENT = 0.90            # same satellite family: seed consensuses are near-homogeneous, 90% splits variants >10% apart
 SAME_VARIANT_IDENT = 0.97      # same monomer variant: Naish et al. 2021 HOR rule, <= 5 differences per 178 bp
 RELATED_IDENT = 0.70           # related families (superfamily, multimer folding, shared monomer frame)
 FULL_MONOMER_COV = 0.90        # a hit covering >= 90% of the model is a whole monomer
 S_MIN = 20_000                 # prior: smallest satellite cluster treated as centromere-sized (bp); other sizes are rungs
 LEN_TOL = 0.05                 # length tolerance for "k copies of a unit" and "same-length" comparisons
 RELATED_LEN_TOL = 0.15         # length tolerance for related families (subfamilies with indels)
-FULL_PERIOD_TOL = 0.01         # a TRF consensus within 1% (>= 1 bp) of its period is one whole repeat unit
+FULL_PERIOD_TOL = 0.01         # a seed consensus within 1% (>= 1 bp) of its period is one whole repeat unit
 MAX_CHROMOSOMES = 50           # more sequences than this: probably not a chromosome-level assembly (warning, plot)
 LU_MAX_UNIT = 30_000           # longest long-unit period searched (no principled upper bound; 2 copies fit a window)
 
 # ---- engineering and search constants (cost or tool settings; not tuned on data)
 # TRF: Benson's recommended weights (match 2, mismatch 7, indel 7, PM 80, PI 10), minscore 50, max period,
 # -l 6 (Mb): chunks are <= 5 Mb, so no array is longer
-TRF_ARGS = ["2", "7", "7", "80", "10", "50", str(TRF_MAX_PERIOD), "-l", "6", "-h", "-ngs"]
+TRF_ARGS = ["2", "7", "7", "80", "10", "50", str(SEED_MAX_PERIOD), "-l", "6", "-h", "-ngs"]
+# FasTAN: intervals as a .1ano mask (-m) with the cuts between copies (-p); one thread per chunk (chunks run in parallel).
+# Its search is fixed: units 2 bp - 30 kb, >= 1.95 copies, adjacent copies aligned at >= ~70% identity
+FASTAN_ARGS = ["-m", "-p", "-T1"]
+CONS_UNITS = 30                # copies per seed consensus: the majority base of a column is wrong with p < 1e-3 when
+                               # copies are 20% divergent (binomial tail); more copies cost time, not accuracy
 BLAST_BATCH = 200              # seed representatives per BLAST round (bounds output size)
 ANNOT_CHUNK = 2_000_000        # nhmmer chunk (bp): keeps all threads busy; E-values rescaled to chromosome length
 MULTIMER_RATIO = 1.9           # a model >= 1.9 x longer than another is a multimer of it (k >= 2, minus indels)
@@ -52,11 +58,12 @@ TE_CENTROMERIC_CLADE = "CRM"   # CR chromoviruses (CRM maize, CRR rice, CRB Bras
 
 @dataclass
 class Params:
-    trf_chunk: int = 5_000_000
-    trf_overlap: int = 10_000
+    seed_engine: str = "fastan"
+    seed_chunk: int = 5_000_000
+    seed_overlap: int = 10_000
     min_period: int = 30
-    max_period: int = TRF_MAX_PERIOD
-    min_seed_span: int = TRF_MAX_PERIOD
+    max_period: int = SEED_MAX_PERIOD
+    min_seed_span: int = SEED_MAX_PERIOD
     fam_ident: float = FAMILY_IDENT
     multi_ident: float = 0.80
     superfam_ident: float = RELATED_IDENT
@@ -94,7 +101,7 @@ class Params:
     lu_flank: int = 500_000
     lu_window: int = 1_000_000
     lu_window_overlap: int = 2 * LU_MAX_UNIT
-    lu_min_unit: int = TRF_MAX_PERIOD
+    lu_min_unit: int = SEED_MAX_PERIOD
     lu_max_unit: int = LU_MAX_UNIT
     lu_min_ident: float = 0.80
     contig_end_bp: int = 10_000
@@ -106,11 +113,13 @@ class Params:
 
 # one line per field: what it does and why it has this value
 REASON = {
-    "trf_chunk": "TRF chunk (bp); speed only, bounded by TRF -l 6 (6 Mb)",
-    "trf_overlap": "overlap between TRF chunks (bp); >= 2 x TRF_MAX_PERIOD so no array is lost at a chunk edge",
+    "seed_engine": "tandem-repeat finder for the seeds: fastan (FasTAN + abPOA unit consensus) or trf (the --seed-engine "
+                   "option)",
+    "seed_chunk": "seed-search chunk (bp); speed only (parallel chunks), bounded by TRF -l 6 (6 Mb)",
+    "seed_overlap": "overlap between seed chunks (bp); >= 2 x SEED_MAX_PERIOD so no array is lost at a chunk edge",
     "min_period": "shortest seed period (bp): satellites, not microsatellites (misses 5-12-bp satellites, e.g. Drosophila)",
-    "max_period": "longest seed period (bp) = TRF's maximum",
-    "min_seed_span": "shortest TRF array that seeds a family (bp) = one longest unit; bounds BLAST work only",
+    "max_period": "longest seed period (bp) = SEED_MAX_PERIOD",
+    "min_seed_span": "shortest tandem array that seeds a family (bp) = one longest unit; bounds BLAST work only",
     "fam_ident": "identity for one family (seeds of equal period); see FAMILY_IDENT",
     "multi_ident": "identity when one seed is a k-mer of another: a HOR-period consensus averages divergent monomers",
     "superfam_ident": "related-family identity: superfamily table, shared monomer frame (so the HMMs), co-centromeric "
@@ -151,7 +160,7 @@ REASON = {
     "lu_flank": "long-unit scan flank around each centromere (bp)",
     "lu_window": "long-unit self-alignment window (bp); cost, >= 4 x lu_max_unit",
     "lu_window_overlap": "overlap between long-unit windows = 2 x LU_MAX_UNIT, so no unit pair is split",
-    "lu_min_unit": "shortest long-unit period = TRF_MAX_PERIOD (hand-off from TRF)",
+    "lu_min_unit": "shortest long-unit period = SEED_MAX_PERIOD (hand-off from the seeds)",
     "lu_max_unit": "longest long-unit period = LU_MAX_UNIT",
     "lu_min_ident": "min self-alignment identity for long-unit arrays: the divergence minimap2 asm20 aligns through",
     "contig_end_bp": "borrowed genomes: a call this close to a contig end is flagged contig_end (bp)",

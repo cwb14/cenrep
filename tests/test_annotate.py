@@ -26,7 +26,7 @@ def test_chain_arrays_splits_on_gap_and_strand(test_params):
     assert set(arr.strand) == {"+", "-"} and len(mon) == 8
 
 
-@pytest.mark.skipif(not have("trf", "blastn", "mafft"), reason="tools missing")
+@pytest.mark.skipif(not have("FasTAN", "FAtoGDB", "ONEview", "blastn", "mafft"), reason="tools missing")
 def test_annotate_synthetic_centromere(synth_annot, synth_complex, synth_families):
     mon, arr = synth_annot
     fam, _ = synth_families
@@ -39,7 +39,7 @@ def test_annotate_synthetic_centromere(synth_annot, synth_complex, synth_familie
     assert mon.mon_idx.tolist() == list(range(len(mon)))
 
 
-@pytest.mark.skipif(not have("trf", "blastn", "mafft"), reason="tools missing")
+@pytest.mark.skipif(not have("FasTAN", "FAtoGDB", "ONEview", "blastn", "mafft"), reason="tools missing")
 def test_chunked_search_matches_whole_chromosome(synth_complex, synth_families):
     """Speed fix: nhmmer parallelises over query models only, so long models left 31 of 32 threads idle.
     Chunked search (chunks x all models on a thread pool, E-values rescaled to the chromosome) must give
@@ -99,7 +99,7 @@ def test_chain_arrays_across_related_families(test_params):
     assert (mon.family == "B").sum() == 0                                  # per-family chaining drops them
 
 
-@pytest.mark.skipif(not have("trf", "blastn", "mafft"), reason="tools missing")
+@pytest.mark.skipif(not have("FasTAN", "FAtoGDB", "ONEview", "blastn", "mafft"), reason="tools missing")
 def test_evalue_ref_len_scales_short_sequences(synth_complex, synth_families):
     """Contigs: E-values scale with sequence length, so a 1-Mb contig got a cutoff ~8-13 bits looser than a
     100-Mb chromosome. evalue_ref_len scales every shorter sequence as if it had that length."""

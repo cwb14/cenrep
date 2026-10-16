@@ -30,8 +30,8 @@ def attrs(d: dict) -> str:
     return ";".join(f"{k}={_esc(v)}" for k, v in d.items() if v is not None)
 
 
-def trf_loci(rows: pd.DataFrame) -> list:
-    """Merge overlapping TRF rows; a locus takes period/copies/pct_match/consensus of its top-scoring row."""
+def tandem_loci(rows: pd.DataFrame) -> list:
+    """Merge overlapping seed-table rows; a locus takes period/copies/pct_match/consensus of its top-scoring row."""
     loci, cur = [], None
     for r in rows.sort_values("start").itertuples(index=False):
         if cur is not None and r.start < cur["end"]:
@@ -88,7 +88,7 @@ def write_genome(d: dict, names: dict, outdir, p) -> None:
 
     stats, tandem = {}, []
     by = lambda df: {c: x for c, x in df.groupby("chrom", sort=False)} if len(df) else {}
-    inc_by, mon_by, units_by, trf_by, lu_by = (by(x) for x in (inc, mon, d["hor_units"], d["trf"], d["longunit"]))
+    inc_by, mon_by, units_by, tr_by, lu_by = (by(x) for x in (inc, mon, d["hor_units"], d["seeds"], d["longunit"]))
     for c, rg in reg.items():                            # per-sequence tables: ~3,000 contigs stay cheap
         s0, e0 = rg["cen_start"], rg["cen_end"]
         ic = inc_by.get(c, inc.iloc[:0])
@@ -108,14 +108,14 @@ def write_genome(d: dict, names: dict, outdir, p) -> None:
                         top_tandem_hor=top)
         sat_iv = list(zip(ic.start, ic.end))
         cand = []
-        t = trf_by.get(c, d["trf"].iloc[:0])
+        t = tr_by.get(c, d["seeds"].iloc[:0])
         t = t[(t.start < e0) & (t.end > s0)]
-        # drop satellite-derived TRF rows BEFORE merging, so a satellite row that bleeds a few bp into an
+        # drop satellite-derived seed rows BEFORE merging, so a satellite row that bleeds a few bp into an
         # adjacent microsatellite cannot swallow it into one locus
         t = t.loc[[clipped_bp(sat_iv, s, e) < 0.5 * (e - s) for s, e in zip(t.start, t.end)]]
-        for L in trf_loci(t):
+        for L in tandem_loci(t):
             cand.append((L["start"], L["end"], dict(period=L["period"], copies=L["copies"],
-                                                    pct_match=L["pct_match"], unit_source="trf",
+                                                    pct_match=L["pct_match"], unit_source=p.seed_engine,
                                                     consensus=L["consensus"])))
         for r in lu_by.get(c, d["longunit"].iloc[:0]).itertuples(index=False):
             cand.append((int(r.start), int(r.end), dict(period=int(r.unit), copies=r.copies, identity=r.identity,

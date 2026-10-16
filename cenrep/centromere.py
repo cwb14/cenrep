@@ -124,7 +124,7 @@ def finalize(chrom: str, L: int, call, fa, genes_c, chrom_density, p, borrowed: 
     return row
 
 
-def call_regions(genome, arrays, primary: set, genes, trf_rows, tmpdir, threads: int, p, borrowed: bool = False,
+def call_regions(genome, arrays, primary: set, genes, seed_rows, tmpdir, threads: int, p, borrowed: bool = False,
                  te=None, capped: bool = False):
     """borrowed (contig assemblies with families from --classify-from): only full satellite calls count. A contig
     without the centromeric satellite is no evidence of a satellite-free centromere, so there is no weak-satellite
@@ -148,7 +148,7 @@ def call_regions(genome, arrays, primary: set, genes, trf_rows, tmpdir, threads:
         x = sat[c] or (dict(cen_start=cores[c]["start"], cen_end=cores[c]["end"]) if c in cores else None)
         return (c, max(0, x["cen_start"] - p.lu_flank), min(L, x["cen_end"] + p.lu_flank)) if x else (c, 0, L)
     targets = [target(c, L) for c, L in genome.chroms.items() if sat[c] or not borrowed]
-    lu = longunit.detect(genome.fasta, targets, longunit.build_masks([arrays, trf_rows]), tmpdir, threads, p)
+    lu = longunit.detect(genome.fasta, targets, longunit.build_masks([arrays, seed_rows]), tmpdir, threads, p)
     rows = {}
     lu_by = dict(tuple(lu.groupby("chrom"))) if len(lu) else {}
     with pysam.FastaFile(str(genome.fasta)) as fa:

@@ -7,12 +7,12 @@ from pathlib import Path
 import pandas as pd
 import pyhmmer
 
-from . import __version__, annotate, centromere, classify, families, hor, output, plot, te, trf
+from . import __version__, annotate, centromere, classify, families, hor, output, plot, seeds, te
 from .genomes import discover_genomes, load_genes
 from .params import MAX_CHROMOSOMES, TE_DERIVED_FRAC, Params, format_borrow, parse_borrow, to_dict
 from .util import CenrepError, log, require_tools
 
-STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "output", "plot"]
+STAGES = ["seeds", "families", "annotate", "classify", "centromeres", "hor", "output", "plot"]
 # results version per stage: bump a stage when its code can change outputs; a checkpoint's fingerprint carries the
 # highest version among it and earlier stages, so a bump invalidates that stage and later ones only.
 # 0.3.0 = C1/C2/I1 review fixes; 0.3.2 = classify: strong-family precedence per chromosome;
@@ -29,11 +29,12 @@ STAGES = ["trf", "families", "annotate", "classify", "centromeres", "hor", "outp
 # 0.4.4 = families: models founded on a seed whose consensus spans its whole TRF period (base_unit).
 # 0.6.0 = classify: dominant column; centromeres: retrotransposon evidence (tes/), honesty cap without it.
 # 0.7.0 = centromeres: with decisive (CRM) evidence a satellite call away from the core is replaced by the core.
-STAGE_VERSION = {"trf": "0.3.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.9.5",
+# 0.4.0 (seeds) = stage trf renamed seeds; FasTAN engine (default) beside TRF.
+STAGE_VERSION = {"seeds": "0.4.0", "families": "0.5.2", "annotate": "0.5.0", "classify": "0.9.5",
                  "centromeres": "0.9.2", "hor": "0.3.0", "output": "0.4.1", "plot": "0.4.1"}
 # earliest stage each parameter affects; a stage's checkpoint fingerprint covers its own and all earlier stages'
 STAGE_PARAMS = {
-    "trf": ["trf_chunk", "trf_overlap"],
+    "seeds": ["seed_engine", "seed_chunk", "seed_overlap"],
     "families": ["min_period", "max_period", "min_seed_span", "fam_ident", "multi_ident", "superfam_ident",
                  "absorb_ident", "dedup_ident", "chain_ident", "min_fam_span", "max_families", "hmm_sample", "hmm_sample_bp", "min_hmm_seqs",
                  "nhmmer_evalue", "array_gap_factor"],
@@ -49,17 +50,20 @@ STAGE_PARAMS = {
     "output": ["tandem_min_len"],
     "plot": [],
 }
-TOOLS = ["trf", "makeblastdb", "blastn", "mafft", "cd-hit-est", "minimap2", "cmsearch"]
+TOOLS = ["makeblastdb", "blastn", "mafft", "cd-hit-est", "minimap2", "cmsearch"]        # + the seed engine's
 
 
 class Pipeline:
-    def __init__(self, complex_dir, threads: int, trf_cache, p: Params, force: str = None, out_dir=None):
+    def __init__(self, complex_dir, threads: int, seed_cache, p: Params, force: str = None, out_dir=None):
+        if p.seed_engine not in seeds.ENGINES:
+            raise CenrepError(f"seed engine {p.seed_engine!r} is not one of: {', '.join(seeds.ENGINES)}")
         self.cdir = Path(complex_dir).resolve()
         self.name = self.cdir.name
         self.out = Path(out_dir).resolve() if out_dir else self.cdir / "centromere"
         self.work = self.out / "work"
         self.threads = threads
-        self.cache = Path(trf_cache).resolve() if trf_cache else self.work / "trf_cache"
+        legacy = self.work / "trf_cache"                 # cenrep < 0.9: its TRF results stay usable
+        self.cache = Path(seed_cache).resolve() if seed_cache else legacy if legacy.is_dir() else self.work / "seed_cache"
         genomes = discover_genomes(self.cdir)
         self.borrow = self._check_borrow(parse_borrow(p.classify_from), {g.name for g in genomes})
         self.p = p = replace(p, classify_from=format_borrow(self.borrow))
@@ -121,8 +125,8 @@ class Pipeline:
             self._genes[g.name] = load_genes(self.cdir, g.name, g.chroms)
         return self._genes[g.name]
 
-    def trf_table(self, g):
-        return trf.load_trf(self._p("trf", f"{g.name}.trf.tsv.gz"))
+    def seed_table(self, g):
+        return seeds.load_seeds(self._p("seeds", f"{g.name}.seeds.tsv.gz"))
 
     def fam_table(self):
         return pd.read_csv(self._p("families", "families.tsv"), sep="\t",
@@ -150,7 +154,7 @@ class Pipeline:
 
     # ---------------------------------------------------------------- driver
     def run(self) -> None:
-        require_tools(TOOLS)
+        require_tools(TOOLS + seeds.ENGINES[self.p.seed_engine].TOOLS)
         if not families.RRNA_CM.exists():
             raise CenrepError(f"rRNA models missing: {families.RRNA_CM} (part of the cenrep package; reinstall it)")
         t0 = time.time()
@@ -171,15 +175,15 @@ class Pipeline:
         log.info(f"all stages done ({(time.time() - t0) / 60:.1f} min); outputs in {self.out}")
 
     # ---------------------------------------------------------------- stages
-    def stage_trf(self):
-        paths = trf.trf_genomes(self.genomes, self.cache, self.threads, self.p)
+    def stage_seeds(self):
+        paths = seeds.seed_genomes(self.genomes, self.cache, self.threads, self.p)
         for g in self.genomes:
-            link = self._p("trf", f"{g.name}.trf.tsv.gz")
+            link = self._p("seeds", f"{g.name}.seeds.tsv.gz")
             link.unlink(missing_ok=True)
             link.symlink_to(paths[g.name])
 
     def stage_families(self):
-        families.build_families({g.name: self.trf_table(g) for g in self.genomes}, self.genomes,
+        families.build_families({g.name: self.seed_table(g) for g in self.genomes}, self.genomes,
                                 self.work / "families", self.threads, self.p)
 
     def stage_annotate(self):
@@ -286,7 +290,7 @@ class Pipeline:
             capped = tev is None and not borrowed and bool(primary) and not dominant
 
             def call_with(prim):
-                return centromere.call_regions(g, arrays, prim, self.genes(g), self.trf_table(g),
+                return centromere.call_regions(g, arrays, prim, self.genes(g), self.seed_table(g),
                                                self.work / "centromeres" / f"tmp_{g.name}", self.threads, self.p,
                                                borrowed=borrowed, te=tev, capped=capped)
             rows, lu = call_with(primary)
@@ -328,7 +332,7 @@ class Pipeline:
                     longunit=pd.read_csv(self._p("centromeres", f"{g.name}.longunit.tsv"), sep="\t",
                                          dtype={"chrom": str}),
                     mon_hor=rd(f"{g.name}.monomer_hor.tsv.gz"), hor_occ=rd(f"{g.name}.hor_occ.tsv"),
-                    hor_units=rd(f"{g.name}.hor_units.tsv"), trf=self.trf_table(g), genes=self.genes(g),
+                    hor_units=rd(f"{g.name}.hor_units.tsv"), seeds=self.seed_table(g), genes=self.genes(g),
                     fam_info=self.fam_info())
 
     def stage_output(self):

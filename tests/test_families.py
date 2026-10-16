@@ -49,7 +49,7 @@ def test_cluster_seeds_rotation_multimer_unrelated(tmp_path):
     assert assign["B"] == "B" and assign["Asub"] == "Asub"
 
 
-@pytest.mark.skipif(not have("trf", "blastn", "mafft"), reason="tools missing")
+@pytest.mark.skipif(not have("FasTAN", "FAtoGDB", "ONEview", "blastn", "mafft"), reason="tools missing")
 def test_build_families_on_synthetic(synth_families):
     fam, workdir = synth_families
     near = lambda n: fam[(fam.consensus_len - n).abs() <= 3]

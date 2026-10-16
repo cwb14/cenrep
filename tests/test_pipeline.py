@@ -12,13 +12,6 @@ def test_every_parameter_belongs_to_exactly_one_stage():
     assert sorted(mapped) == sorted(f.name for f in fields(Params)) and len(mapped) == len(set(mapped))
 
 
-def test_trf_cache_key_depends_on_trf_settings(tmp_path):
-    from cenrep.trf import cache_path
-    a = cache_path(tmp_path, "abc", Params())
-    assert a == cache_path(tmp_path, "abc", Params())
-    assert a != cache_path(tmp_path, "abc", Params(trf_chunk=1_000_000))
-
-
 def test_every_parameter_has_a_reason():
     from cenrep.params import REASON
     assert set(REASON) == {f.name for f in fields(Params)} and all(REASON.values())
@@ -49,6 +42,30 @@ def test_classify_from_is_normalised_and_sources_come_first(tmp_path):
     pl = Pipeline(cdir, 1, tmp_path / "cache", Params(classify_from=" Ctg = b+a+b "))
     assert pl.p.classify_from == "Ctg=a+b" and pl.borrow == {"Ctg": ["a", "b"]}
     assert [g.name for g in pl.genomes] == ["a", "b", "Ctg"]
+
+
+def test_seed_engine_changes_every_fingerprint(tmp_path):
+    """Seeds feed every stage: a checkpoint made with one engine is never reused with the other."""
+    from cenrep.pipeline import Pipeline
+    cdir = _complex(tmp_path, ["a"])
+    a = Pipeline(cdir, 1, tmp_path / "cache", Params())
+    b = Pipeline(cdir, 1, tmp_path / "cache", Params(seed_engine="trf"))
+    assert all(a.fingerprint(s) != b.fingerprint(s) for s in STAGES)
+
+
+def test_default_cache_keeps_using_an_older_runs_trf_cache(tmp_path):
+    """Runs of cenrep < 0.9 cached TRF in OUTDIR/work/trf_cache (hours per large genome); a rerun must find it."""
+    from cenrep.pipeline import Pipeline
+    cdir = _complex(tmp_path, ["a"])
+    assert Pipeline(cdir, 1, None, Params()).cache == cdir / "centromere" / "work" / "seed_cache"
+    (cdir / "centromere" / "work" / "trf_cache").mkdir()
+    assert Pipeline(cdir, 1, None, Params(seed_engine="trf")).cache == cdir / "centromere" / "work" / "trf_cache"
+
+
+def test_unknown_seed_engine_fails_clearly(tmp_path):
+    from cenrep.pipeline import Pipeline
+    with pytest.raises(CenrepError, match="seed engine 'nope'"):
+        Pipeline(_complex(tmp_path, ["a"]), 1, tmp_path / "cache", Params(seed_engine="nope"))
 
 
 def test_classify_from_changes_classify_fingerprint_only(tmp_path):

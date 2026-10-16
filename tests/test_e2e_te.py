@@ -8,7 +8,7 @@ from cenrep.params import Params
 from conftest import TEST_PARAMS, have
 from synth import L, build_complex
 
-TOOLS = ("trf", "makeblastdb", "blastn", "mafft", "cd-hit-est", "minimap2", "cmsearch")
+TOOLS = ("FasTAN", "FAtoGDB", "ONEview", "makeblastdb", "blastn", "mafft", "cd-hit-est", "minimap2", "cmsearch")
 pytestmark = pytest.mark.skipif(not have(*TOOLS), reason="external tools missing")
 
 

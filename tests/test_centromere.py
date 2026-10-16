@@ -88,7 +88,7 @@ def test_borrowed_calls_need_satellite_evidence(tmp_path, monkeypatch):
     satellite is no evidence of a satellite-free centromere, so no weak-satellite or long-unit fallback, and
     the long-unit scan covers call flanks only."""
     from cenrep import centromere, longunit
-    from cenrep.trf import COLS
+    from cenrep.seeds import COLS
     g, arrays = _contigs(tmp_path)
     seen = []
     lu = pd.DataFrame([("c3", 80_000, 140_000, 3000, 20.0, 0.95)], columns=LU_COLS)

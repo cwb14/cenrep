@@ -1,4 +1,4 @@
-"""S2: satellite family library from TRF seeds (rotation-invariant, multimer-aware)."""
+"""S2: satellite family library from tandem-repeat seeds (rotation-invariant, multimer-aware)."""
 import random
 from pathlib import Path
 
@@ -32,11 +32,11 @@ def internal_period(seq: str, pmax: int, ident: float = FAMILY_IDENT):
     return None
 
 
-def select_seeds(trf: dict, p) -> pd.DataFrame:
-    """TRF arrays that found families: period within [min_period, max_period], span >= min_seed_span, and not a
+def select_seeds(tables: dict, p) -> pd.DataFrame:
+    """Tandem arrays that found families: period within [min_period, max_period], span >= min_seed_span, and not a
     microsatellite in disguise (a consensus repeating itself at a period < min_period)."""
     parts = []
-    for g, df in trf.items():
+    for g, df in tables.items():
         d = df[(df.period >= p.min_period) & (df.period <= p.max_period)
                & ((df.end - df.start) >= p.min_seed_span)].copy()
         d = d[[internal_period(c, p.min_period - 1) is None for c in d.consensus.astype(str)]]
@@ -460,13 +460,13 @@ def build_hmm(fam_id: str, rep_seq: str, intervals, fastas, workdir: Path, threa
     return h, h.consensus.upper(), "profile", len(s2)
 
 
-def build_families(trf: dict, genomes: list, workdir: Path, threads: int, p) -> pd.DataFrame:
+def build_families(tables: dict, genomes: list, workdir: Path, threads: int, p) -> pd.DataFrame:
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    seeds = select_seeds(trf, p)
+    seeds = select_seeds(tables, p)
     fams, hmms = [], []
     if seeds.empty:
-        log.warning("families: no TRF seeds; no satellite families")
+        log.warning("families: no seeds; no satellite families")
     else:
         seqs = dict(zip(seeds.seed_id, seeds.consensus))
         assign = cluster_seeds(seqs, list(seeds.seed_id), workdir / "blast", threads, p.fam_ident, p.multi_ident)
